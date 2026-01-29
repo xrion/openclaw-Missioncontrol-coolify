@@ -76,7 +76,7 @@ ENV PATH="/root/.bun/bin:${PATH}"
 # Install Vercel & Marp (Slides) & QMD (Search)
 # Node & NPM are already provided by base image
 # QMD requires bun and global install
-RUN npm install -g vercel @marp-team/marp-cli https://github.com/tobi/qmd && \
+RUN bun install -g vercel @marp-team/marp-cli https://github.com/tobi/qmd && \
     hash -r
 
 # Configure QMD Persistence
@@ -114,7 +114,7 @@ ENV MOLT_BOT_BETA=${MOLT_BOT_BETA} \
 RUN curl -fsSL https://molt.bot/install.sh | bash
 
 # Install AI Tool Suite (globally as root)
-RUN bun install -g @openai/codex @google/gemini-cli && \
+RUN bun install -g @openai/codex @google/gemini-cli opencode-ai && \
     curl -fsSL https://claude.ai/install.sh | bash && \
     curl -L https://code.kimi.com/install.sh | bash
 
