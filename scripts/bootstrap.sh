@@ -183,7 +183,7 @@ ulimit -n 65535
 # ----------------------------
 # Try to extract existing token if not already set (e.g. from previous run)
 if [ -f "$CONFIG_FILE" ]; then
-    SAVED_TOKEN=$(grep -o '"token": "[^"]*"' "$CONFIG_FILE" | cut -d'"' -f4)
+    SAVED_TOKEN=$(jq -r '.gateway.auth.token // empty' "$CONFIG_FILE" 2>/dev/null || grep -o '"token": "[^"]*"' "$CONFIG_FILE" | tail -1 | cut -d'"' -f4)
     if [ -n "$SAVED_TOKEN" ]; then
         TOKEN="$SAVED_TOKEN"
     fi
