@@ -198,6 +198,43 @@ EOF
 fi
 
 # ----------------------------
+# Auto-import agents from /app/agents into openclaw.json
+# ----------------------------
+auto_import_agents() {
+  [ -d "/app/agents" ] || return 0
+  [ -f "$CONFIG_FILE" ] || return 0
+
+  for dir in /app/agents/*; do
+    [ -d "$dir" ] || continue
+    id="$(basename "$dir")"
+    [ "$id" = "main" ] && continue
+
+    # Seed workspace + SOUL if missing
+    seed_agent "$id" "$id"
+
+    # Ensure agent sessions dir exists
+    mkdir -p "$OPENCLAW_STATE/agents/$id/sessions"
+
+    # Add agent to config if missing
+    if ! jq -e --arg id "$id" '.agents.list[]? | select(.id==$id)' "$CONFIG_FILE" >/dev/null 2>&1; then
+      tmp="$(mktemp)"
+      jq --arg id "$id" --arg name "$id" --arg ws "/data/openclaw-$id" '
+        .agents.list = (.agents.list // []) |
+        .agents.list += [{
+          "id": $id,
+          "name": $name,
+          "workspace": $ws,
+          "heartbeat": { "every": "15m" }
+        }]
+      ' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"
+      echo "🧩 Imported agent: $id"
+    fi
+  done
+}
+
+auto_import_agents
+
+# ----------------------------
 # Export state
 # ----------------------------
 export OPENCLAW_STATE_DIR="$OPENCLAW_STATE"
@@ -274,6 +311,16 @@ fi
 
 # Convex integration (optional)
 if [ -n "${CONVEX_URL:-}" ]; then
+  # Sync agents from openclaw.json into Convex (idempotent)
+  if [ -f "$CONFIG_FILE" ]; then
+    while IFS= read -r agent_id; do
+      [ -z "$agent_id" ] && continue
+      args=$(jq -nc --arg agentId "$agent_id" --arg name "$agent_id" \
+        '{agentId:$agentId,name:$name,role:"agent",description:"Imported from openclaw.json",heartbeatInterval:900000}')
+      npx convex run agents:register --args "$args" 2>/dev/null || true
+    done < <(jq -r '.agents.list[]?.id' "$CONFIG_FILE" 2>/dev/null || true)
+  fi
+
   # One-time Convex initialization
   if [ -f scripts/convex-setup.sh ]; then
     bash scripts/convex-setup.sh || echo "Convex setup encountered an issue (non-fatal)"
