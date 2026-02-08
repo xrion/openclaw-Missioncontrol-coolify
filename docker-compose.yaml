@@ -72,6 +72,8 @@ services:
       # Public URL Access
 
       CF_TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
+      # npm: avoid peer-resolution failures when convex CLI pulls deps at runtime
+      NPM_CONFIG_LEGACY_PEER_DEPS: "true"
       # Deployment & Git
       VERCEL_ORG_ID: ${VERCEL_ORG_ID}
       VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID}
@@ -172,49 +174,12 @@ services:
     depends_on:
       openclaw:
         condition: service_healthy
-      convex-sync:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  convex-sync:
-    image: node:20-slim
-    working_dir: /app/mission-control
-    env_file:
-      - .env
-    environment:
-      CONVEX_URL: ${CONVEX_URL:-}
-      CONVEX_DEPLOY_KEY: ${CONVEX_DEPLOY_KEY:-}
-    volumes:
-      - ./:/app:ro
-      - openclaw-data:/data
-    command: >
-      bash -lc "set -e
-        if [ -z \"$CONVEX_URL\" ]; then
-          echo 'convex-sync: CONVEX_URL not set, skipping.'
-          exit 0
-        fi
-        cd /app/mission-control
-        # Ensure convex CLI is available (downloaded on demand)
-        npx --yes convex@1.17.0 --version >/dev/null
-        # Deploy schema if deploy key provided (idempotent)
-        if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then
-          CONVEX_DEPLOY_KEY=\"$CONVEX_DEPLOY_KEY\" npx convex deploy --url \"$CONVEX_URL\" || true
-        fi
-        # Register agents from openclaw.json (upsert)
-        if [ ! -f /data/.openclaw/openclaw.json ]; then
-          echo 'convex-sync: config not found at /data/.openclaw/openclaw.json'
-          exit 0
-        fi
-        node -e \"const fs=require('fs'),{spawnSync}=require('child_process');const cfg=JSON.parse(fs.readFileSync('/data/.openclaw/openclaw.json','utf8'));const url=process.env.CONVEX_URL;for(const a of (cfg.agents&&cfg.agents.list)||[]){const args={agentId:a.id,name:a.name||a.id,role:a.role||'agent',description:a.description||'Imported from openclaw.json',heartbeatInterval:900000,avatar:a.avatar};console.log('convex-sync: registering',args.agentId);const r=spawnSync('npx',['convex','run','agents:register','--url',url,'--args',JSON.stringify(args)],{stdio:'inherit'});if(r.status!==0)console.error('convex-sync: register failed for',args.agentId);}}\""
-    restart: "no"
-    depends_on:
-      openclaw:
-        condition: service_healthy
 
 volumes:
   openclaw-data:
