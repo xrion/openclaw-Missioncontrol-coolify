@@ -190,9 +190,27 @@ services:
       CONVEX_URL: ${CONVEX_URL:-}
       CONVEX_DEPLOY_KEY: ${CONVEX_DEPLOY_KEY:-}
     volumes:
-      - ./:/app
+      - ./:/app:ro
       - openclaw-data:/data
-    command: ["bash", "/app/scripts/convex-sync.sh"]
+    command: >
+      bash -lc "set -e
+        if [ -z \"$CONVEX_URL\" ]; then
+          echo 'convex-sync: CONVEX_URL not set, skipping.'
+          exit 0
+        fi
+        cd /app/mission-control
+        # Ensure convex CLI is available (downloaded on demand)
+        npx --yes convex@1.17.0 --version >/dev/null
+        # Deploy schema if deploy key provided (idempotent)
+        if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then
+          CONVEX_DEPLOY_KEY=\"$CONVEX_DEPLOY_KEY\" npx convex deploy --url \"$CONVEX_URL\" || true
+        fi
+        # Register agents from openclaw.json (upsert)
+        if [ ! -f /data/.openclaw/openclaw.json ]; then
+          echo 'convex-sync: config not found at /data/.openclaw/openclaw.json'
+          exit 0
+        fi
+        node -e \"const fs=require('fs'),{spawnSync}=require('child_process');const cfg=JSON.parse(fs.readFileSync('/data/.openclaw/openclaw.json','utf8'));const url=process.env.CONVEX_URL;for(const a of (cfg.agents&&cfg.agents.list)||[]){const args={agentId:a.id,name:a.name||a.id,role:a.role||'agent',description:a.description||'Imported from openclaw.json',heartbeatInterval:900000,avatar:a.avatar};console.log('convex-sync: registering',args.agentId);const r=spawnSync('npx',['convex','run','agents:register','--url',url,'--args',JSON.stringify(args)],{stdio:'inherit'});if(r.status!==0)console.error('convex-sync: register failed for',args.agentId);}}\""
     restart: "no"
     depends_on:
       openclaw:
