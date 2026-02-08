@@ -178,9 +178,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
       }
     },
     "list": [
-      { "id": "main", "default": true, "name": "default", "workspace": "${OPENCLAW_WORKSPACE:-/data/openclaw-workspace}" },
+      { "id": "main", "name": "default", "workspace": "${OPENCLAW_WORKSPACE:-/data/openclaw-workspace}" },
       {
         "id": "jarvis",
+        "default": true,
         "name": "Jarvis",
         "workspace": "/data/openclaw-jarvis",
         "heartbeat": { "every": "15m" }
@@ -195,6 +196,17 @@ if [ ! -f "$CONFIG_FILE" ]; then
   }
 }
 EOF
+fi
+
+# Ensure Jarvis (jarvis) is the default agent and name is set
+if [ -f "$CONFIG_FILE" ]; then
+  tmp="$(mktemp)"
+  jq '
+    .agents.list = (.agents.list // []) |
+    (.agents.list[] | select(.id=="main") | .default) |= false |
+    (.agents.list[] | select(.id=="jarvis") | .default) |= true |
+    (.agents.list[] | select(.id=="jarvis") | .name) |= "Jarvis"
+  ' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"
 fi
 
 # ----------------------------
@@ -313,12 +325,15 @@ fi
 if [ -n "${CONVEX_URL:-}" ]; then
   # Sync agents from openclaw.json into Convex (idempotent)
   if [ -f "$CONFIG_FILE" ]; then
-    while IFS= read -r agent_id; do
+    while IFS= read -r agent_json; do
+      [ -z "$agent_json" ] && continue
+      agent_id=$(echo "$agent_json" | jq -r '.id')
+      agent_name=$(echo "$agent_json" | jq -r '.name // .id')
       [ -z "$agent_id" ] && continue
-      args=$(jq -nc --arg agentId "$agent_id" --arg name "$agent_id" \
+      args=$(jq -nc --arg agentId "$agent_id" --arg name "$agent_name" \
         '{agentId:$agentId,name:$name,role:"agent",description:"Imported from openclaw.json",heartbeatInterval:900000}')
       npx convex run agents:register --args "$args" 2>/dev/null || true
-    done < <(jq -r '.agents.list[]?.id' "$CONFIG_FILE" 2>/dev/null || true)
+    done < <(jq -c '.agents.list[]?' "$CONFIG_FILE" 2>/dev/null || true)
   fi
 
   # One-time Convex initialization
