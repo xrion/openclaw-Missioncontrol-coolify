@@ -9,7 +9,7 @@ export default function LeftSidebar() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
   return (
-    <aside className="w-[250px] bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+    <aside className="w-full h-full bg-white border-r border-gray-200 flex flex-col overflow-hidden">
       <div className="p-4 border-b border-gray-100 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
           Agents
