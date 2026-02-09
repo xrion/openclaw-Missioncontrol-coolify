@@ -122,7 +122,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     }
   },
   "gateway": {
-  "port": $OPENCLAW_GATEWAY_PORT,
+  "port": 18789,
   "mode": "local",
     "bind": "lan",
     "controlUi": {
@@ -313,7 +313,7 @@ cat >"$MC_SHARED_DIR/mc-config.json" <<MCEOF
   "gatewayToken": "$MC_TOKEN",
   "gatewayPort": ${OPENCLAW_GATEWAY_PORT:-18789},
   "gatewayUrl": "https://${SERVICE_FQDN_OPENCLAW:-localhost:${OPENCLAW_GATEWAY_PORT:-18789}}",
-  "gatewayLocalUrl": "http://openclaw:${OPENCLAW_GATEWAY_PORT:-18789}",
+  "gatewayLocalUrl": "http://openclaw:18789",
   "agents": $MC_AGENTS,
   "model": "moonshot/kimi-k2.5",
   "convexEnabled": $([ -n "${CONVEX_URL:-}" ] && echo "true" || echo "false"),
