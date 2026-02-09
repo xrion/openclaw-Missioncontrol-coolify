@@ -6,6 +6,7 @@ export interface MCConfig {
   gatewayUrl: string;
   agents: string[];
   model: string;
+  dashboardPasswordHash?: string;
 }
 
 /**

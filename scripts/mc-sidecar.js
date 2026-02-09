@@ -10,6 +10,8 @@
  *   GET  /config          — Returns mc-config.json data
  *   GET  /agents          — Lists all agents from openclaw.json
  *   POST /agents/create   — Creates a new agent (workspace + config + SOUL.md)
+ *   GET  /files/list      — Lists files/directories at a given path
+ *   GET  /files/read      — Reads a file's content
  */
 
 const http = require("http");
@@ -17,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-const PORT = 18790;
+const PORT = parseInt(process.env.MC_SIDECAR_PORT || "18791", 10);
 const MC_SHARED_DIR = process.env.MC_SHARED_DIR || "/mc-shared";
 const CONFIG_FILE =
   process.env.OPENCLAW_CONFIG_FILE || "/data/.openclaw/openclaw.json";
@@ -303,6 +305,174 @@ function handleCreateAgent(req, res) {
   });
 }
 
+// --- File Browsing Handlers ---
+
+// Allowed root paths for file browsing (security: restrict to known directories)
+const ALLOWED_ROOTS = [
+  "/data/openclaw-workspace",
+  "/data/openclaw-jarvis",
+  "/data/openclaw-developer",
+  "/data/.openclaw",
+];
+
+function isPathAllowed(requestedPath) {
+  const resolved = path.resolve(requestedPath);
+  // Also allow dynamically created agent workspaces
+  const config = readConfig();
+  const agentPaths = (config?.agents?.list || [])
+    .map((a) => a.workspace)
+    .filter(Boolean);
+  const allRoots = [...ALLOWED_ROOTS, ...agentPaths];
+  return allRoots.some((root) => resolved === root || resolved.startsWith(root + "/"));
+}
+
+function handleListFiles(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const dirPath = url.searchParams.get("path") || "/data/openclaw-workspace";
+
+  if (!isPathAllowed(dirPath)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Access denied" }));
+    return;
+  }
+
+  try {
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not a directory" }));
+      return;
+    }
+
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const items = entries
+      .filter((e) => !e.name.startsWith(".") || e.name === ".openclaw")
+      .map((entry) => {
+        const fullPath = path.join(dirPath, entry.name);
+        let size = 0;
+        let mtime = 0;
+        try {
+          const s = fs.statSync(fullPath);
+          size = s.size;
+          mtime = s.mtimeMs;
+        } catch {}
+        return {
+          name: entry.name,
+          path: fullPath,
+          isDirectory: entry.isDirectory(),
+          size,
+          mtime,
+        };
+      })
+      .sort((a, b) => {
+        // Directories first, then by name
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(JSON.stringify({ path: dirPath, items }));
+  } catch (e) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Directory not found: " + e.message }));
+  }
+}
+
+function handleReadFile(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const filePath = url.searchParams.get("path");
+
+  if (!filePath) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "path parameter is required" }));
+    return;
+  }
+
+  if (!isPathAllowed(filePath)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Access denied" }));
+    return;
+  }
+
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Path is a directory, use /files/list" }));
+      return;
+    }
+
+    // Limit file size to 2MB for safety
+    if (stat.size > 2 * 1024 * 1024) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "File too large (max 2MB)" }));
+      return;
+    }
+
+    // Detect if binary
+    const ext = path.extname(filePath).toLowerCase();
+    const textExts = [
+      ".md", ".txt", ".json", ".js", ".ts", ".tsx", ".jsx", ".py", ".sh",
+      ".yaml", ".yml", ".toml", ".env", ".cfg", ".conf", ".ini", ".xml",
+      ".html", ".css", ".csv", ".log", ".sql", ".go", ".rs", ".rb",
+      ".java", ".c", ".cpp", ".h", ".hpp", ".makefile", ".dockerfile",
+    ];
+    const isText = textExts.includes(ext) || ext === "" || stat.size === 0;
+
+    if (!isText) {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.end(JSON.stringify({
+        path: filePath,
+        name: path.basename(filePath),
+        size: stat.size,
+        mtime: stat.mtimeMs,
+        binary: true,
+        content: null,
+      }));
+      return;
+    }
+
+    const content = fs.readFileSync(filePath, "utf-8");
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(JSON.stringify({
+      path: filePath,
+      name: path.basename(filePath),
+      size: stat.size,
+      mtime: stat.mtimeMs,
+      binary: false,
+      content,
+    }));
+  } catch (e) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "File not found: " + e.message }));
+  }
+}
+
+function handleListRoots(req, res) {
+  const config = readConfig();
+  const agents = config?.agents?.list || [];
+  const roots = agents.map((a) => ({
+    name: a.name || a.id,
+    id: a.id,
+    path: a.workspace,
+  }));
+
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify({ roots }));
+}
+
 // --- Server ---
 
 const server = http.createServer((req, res) => {
@@ -329,6 +499,18 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && url.pathname === "/agents/create") {
     return handleCreateAgent(req, res);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/roots") {
+    return handleListRoots(req, res);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/list") {
+    return handleListFiles(req, res);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/read") {
+    return handleReadFile(req, res);
   }
 
   res.writeHead(404, { "Content-Type": "application/json" });

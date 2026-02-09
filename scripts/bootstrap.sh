@@ -293,6 +293,21 @@ if [ -f "$CONFIG_FILE" ]; then
   MC_AGENTS=$(jq -c '[.agents.list[]? | .id] // ["jarvis","developer"]' "$CONFIG_FILE" 2>/dev/null || echo '["jarvis","developer"]')
 fi
 
+# Dashboard password: use MC_PASSWORD env var, or generate one
+MC_DASH_PASSWORD="${MC_PASSWORD:-}"
+if [ -z "$MC_DASH_PASSWORD" ]; then
+  # Auto-generate a password and persist it in the shared volume
+  MC_PASS_FILE="$MC_SHARED_DIR/.mc-password"
+  if [ -f "$MC_PASS_FILE" ]; then
+    MC_DASH_PASSWORD="$(cat "$MC_PASS_FILE")"
+  else
+    MC_DASH_PASSWORD=$(openssl rand -hex 12 2>/dev/null || node -e "console.log(require('crypto').randomBytes(12).toString('hex'))")
+    echo -n "$MC_DASH_PASSWORD" > "$MC_PASS_FILE"
+    chmod 600 "$MC_PASS_FILE"
+  fi
+fi
+MC_PASS_HASH=$(echo -n "$MC_DASH_PASSWORD" | sha256sum | cut -d' ' -f1)
+
 cat >"$MC_SHARED_DIR/mc-config.json" <<MCEOF
 {
   "gatewayToken": "$MC_TOKEN",
@@ -301,19 +316,23 @@ cat >"$MC_SHARED_DIR/mc-config.json" <<MCEOF
   "gatewayLocalUrl": "http://openclaw:${OPENCLAW_GATEWAY_PORT:-18789}",
   "agents": $MC_AGENTS,
   "model": "moonshot/kimi-k2.5",
-  "convexEnabled": $([ -n "${CONVEX_URL:-}" ] && echo "true" || echo "false")
+  "convexEnabled": $([ -n "${CONVEX_URL:-}" ] && echo "true" || echo "false"),
+  "dashboardPasswordHash": "$MC_PASS_HASH"
 }
 MCEOF
 echo "Mission Control config written to $MC_SHARED_DIR/mc-config.json"
+echo "🔐 Dashboard password: $MC_DASH_PASSWORD"
 
 # Start Mission Control sidecar API (agent management) with auto-restart
 if [ -f scripts/mc-sidecar.js ]; then
-  echo "Starting Mission Control sidecar API on port 18790..."
+  MC_SIDECAR_PORT="${MC_SIDECAR_PORT:-18791}"
+  echo "Starting Mission Control sidecar API on port $MC_SIDECAR_PORT..."
   (
     while true; do
       MC_SHARED_DIR="$MC_SHARED_DIR" \
       OPENCLAW_CONFIG_FILE="$CONFIG_FILE" \
       OPENCLAW_STATE_DIR="$OPENCLAW_STATE" \
+      MC_SIDECAR_PORT="$MC_SIDECAR_PORT" \
       node scripts/mc-sidecar.js 2>&1 || true
       echo "[mc-sidecar] Crashed, restarting in 3s..."
       sleep 3
@@ -370,6 +389,7 @@ echo "🦞 OpenClaw is ready!"
 echo "=================================================================="
 echo ""
 echo "🔑 Access Token: $TOKEN"
+echo "🔐 Dashboard Password: $MC_DASH_PASSWORD"
 echo ""
 echo "🌍 Service URL (Local): http://localhost:${OPENCLAW_GATEWAY_PORT:-18789}?token=$TOKEN"
 if [ -n "$SERVICE_FQDN_OPENCLAW" ]; then

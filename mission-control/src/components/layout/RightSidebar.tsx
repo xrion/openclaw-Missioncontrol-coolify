@@ -20,7 +20,7 @@ export default function RightSidebar({
   const now = new Date();
 
   return (
-    <aside className="w-[300px] bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+    <aside className="w-full h-full bg-white border-l border-gray-200 flex flex-col overflow-hidden">
       {/* Agency Status */}
       <div className="p-4 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
