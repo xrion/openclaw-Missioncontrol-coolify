@@ -84,6 +84,8 @@ services:
       # Optional
       OPENCLAW_BETA: ${OPENCLAW_BETA:-false}
 
+      # Mission Control
+      MC_PASSWORD: ${MC_PASSWORD:-}
       # Mission Control (Convex)
       CONVEX_URL: ${CONVEX_URL:-}
       CONVEX_DEPLOY_KEY: ${CONVEX_DEPLOY_KEY:-}

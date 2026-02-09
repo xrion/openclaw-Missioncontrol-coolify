@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { DemoProvider } from "./demo-provider";
+import AuthGate from "./components/auth/AuthGate";
 import App from "./App";
 import "./styles/globals.css";
 
@@ -16,11 +17,13 @@ async function render() {
     const client = new ConvexReactClient(convexUrl);
     root.render(
       <React.StrictMode>
-        <ConvexProvider client={client}>
-          <ConvexDataProvider>
-            <App />
-          </ConvexDataProvider>
-        </ConvexProvider>
+        <AuthGate>
+          <ConvexProvider client={client}>
+            <ConvexDataProvider>
+              <App />
+            </ConvexDataProvider>
+          </ConvexProvider>
+        </AuthGate>
       </React.StrictMode>
     );
   } else {
@@ -30,9 +33,11 @@ async function render() {
     );
     root.render(
       <React.StrictMode>
-        <DemoProvider>
-          <App />
-        </DemoProvider>
+        <AuthGate>
+          <DemoProvider>
+            <App />
+          </DemoProvider>
+        </AuthGate>
       </React.StrictMode>
     );
   }
