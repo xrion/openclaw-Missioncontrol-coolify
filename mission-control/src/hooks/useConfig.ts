@@ -37,10 +37,11 @@ export function useConfig() {
           console.warn("[useConfig] Failed to load gateway config:", err.message);
           setError(err.message);
           // In demo/development mode, provide fallback config
+          const host = window.location.hostname;
           setConfig({
             gatewayToken: "demo-token",
             gatewayPort: 18789,
-            gatewayUrl: window.location.origin.replace(":3000", ":18789"),
+            gatewayUrl: `${window.location.protocol}//${host}:18789`,
             agents: ["jarvis", "developer"],
             model: "moonshot/kimi-k2.5",
           });

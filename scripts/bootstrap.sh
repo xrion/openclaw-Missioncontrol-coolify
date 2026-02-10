@@ -122,7 +122,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     }
   },
   "gateway": {
-  "port": $OPENCLAW_GATEWAY_PORT,
+  "port": 18789,
   "mode": "local",
     "bind": "lan",
     "controlUi": {
@@ -311,9 +311,9 @@ MC_PASS_HASH=$(echo -n "$MC_DASH_PASSWORD" | sha256sum | cut -d' ' -f1)
 cat >"$MC_SHARED_DIR/mc-config.json" <<MCEOF
 {
   "gatewayToken": "$MC_TOKEN",
-  "gatewayPort": ${OPENCLAW_GATEWAY_PORT:-18789},
-  "gatewayUrl": "https://${SERVICE_FQDN_OPENCLAW:-localhost:${OPENCLAW_GATEWAY_PORT:-18789}}",
-  "gatewayLocalUrl": "http://openclaw:${OPENCLAW_GATEWAY_PORT:-18789}",
+  "gatewayPort": ${OPENCLAW_HOST_PORT:-18789},
+  "gatewayUrl": "https://${SERVICE_FQDN_OPENCLAW:-localhost:${OPENCLAW_HOST_PORT:-18789}}",
+  "gatewayLocalUrl": "http://openclaw:18789",
   "agents": $MC_AGENTS,
   "model": "moonshot/kimi-k2.5",
   "convexEnabled": $([ -n "${CONVEX_URL:-}" ] && echo "true" || echo "false"),
@@ -391,7 +391,7 @@ echo ""
 echo "🔑 Access Token: $TOKEN"
 echo "🔐 Dashboard Password: $MC_DASH_PASSWORD"
 echo ""
-echo "🌍 Service URL (Local): http://localhost:${OPENCLAW_GATEWAY_PORT:-18789}?token=$TOKEN"
+echo "🌍 Service URL (Local): http://localhost:${OPENCLAW_HOST_PORT:-18789}?token=$TOKEN"
 if [ -n "$SERVICE_FQDN_OPENCLAW" ]; then
     echo "☁️  Service URL (Public): https://${SERVICE_FQDN_OPENCLAW}?token=$TOKEN"
     echo "    (Wait for cloud tunnel to propagate if just started)"

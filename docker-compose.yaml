@@ -1,3 +1,14 @@
+# ─── Port Model ───────────────────────────────────────────────────
+# Container-internal ports are FIXED (never change these):
+#   openclaw gateway: 18789  │  mc-sidecar: 18790  │  mission-control: 3000
+# Host-exposed ports are configurable via .env:
+#   OPENCLAW_HOST_PORT (default 18789) → maps to container 18789
+#   MC_HOST_PORT       (default 3000)  → maps to container 3000
+# For multi-instance, set unique host ports per instance:
+#   Instance A: OPENCLAW_HOST_PORT=18789  MC_HOST_PORT=3000
+#   Instance B: OPENCLAW_HOST_PORT=18800  MC_HOST_PORT=3001
+# ──────────────────────────────────────────────────────────────────
+
 services:
   registry:
     image: registry:2
@@ -21,7 +32,6 @@ services:
     environment:
       DOCKER_HOST: tcp://docker-proxy:2375
       OPENCLAW_ENABLE_WEBHOOK_PROXY: "1"
-      PORT: 18789
       NODE_ENV: production
       NODE_OPTIONS: '--max-old-space-size=4096'
       HOME: /data
@@ -38,7 +48,10 @@ services:
       BUN_INSTALL: /data/.bun
       # Map OpenClaw vars
       OPENCLAW_GATEWAY_BIND: lan
-      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
+      OPENCLAW_GATEWAY_PORT: 18789
+      # Host ports (used by bootstrap.sh to generate user-facing URLs)
+      OPENCLAW_HOST_PORT: ${OPENCLAW_HOST_PORT:-${OPENCLAW_GATEWAY_PORT:-18789}}
+      MC_HOST_PORT: ${MC_HOST_PORT:-${MC_PORT:-3000}}
       # Tell the binary where to look for state/config
       OPENCLAW_STATE_DIR: /data/.openclaw
       OPENCLAW_WORKSPACE: /data/openclaw-workspace
@@ -93,7 +106,7 @@ services:
       MISSION_CONTROL_ENABLED: ${MISSION_CONTROL_ENABLED:-true}
 
     ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_HOST_PORT:-${OPENCLAW_GATEWAY_PORT:-18789}}:18789"
     volumes:
       - openclaw-data:/data
       - openclaw-config:/root/.openclaw
@@ -162,7 +175,7 @@ services:
     expose:
       - "3000"
     ports:
-      - "${MC_PORT:-3000}:3000"
+      - "${MC_HOST_PORT:-${MC_PORT:-3000}}:3000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.mission-control.rule=Host(`${SERVICE_FQDN_MISSION_CONTROL}`)"
