@@ -19,7 +19,6 @@ export function useAgentChat() {
 
   const agents = config?.agents ?? [];
   const token = config?.gatewayToken ?? "";
-  const gatewayUrl = config?.gatewayUrl ?? "";
 
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [messagesByAgent, setMessagesByAgent] = useState<
@@ -52,7 +51,7 @@ export function useAgentChat() {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!activeAgent || !token || !gatewayUrl || sending) return;
+      if (!activeAgent || !token || sending) return;
 
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
@@ -93,11 +92,13 @@ export function useAgentChat() {
       try {
         const apiMessages = buildApiMessages(activeAgent, text);
 
-        // Use token in query param to avoid custom headers that trigger CORS preflight
-        const url = new URL(`${gatewayUrl}/v1/chat/completions`);
-        url.searchParams.set("token", token);
+        // Use the local nginx proxy at /api/gateway/ which forwards to the
+        // gateway-proxy (port 18789) → gateway (port 18788).
+        // This avoids CORS issues since it's same-origin.
+        // Token is passed in query param to avoid custom headers triggering preflight.
+        const url = `/api/gateway/v1/chat/completions?token=${encodeURIComponent(token)}`;
 
-        const res = await fetch(url.toString(), {
+        const res = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -193,7 +194,7 @@ export function useAgentChat() {
         abortRef.current = null;
       }
     },
-    [activeAgent, token, gatewayUrl, sending, messagesByAgent]
+    [activeAgent, token, sending, messagesByAgent]
   );
 
   const clearHistory = useCallback(() => {

@@ -4,8 +4,8 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Use Docker DNS resolver (allows runtime resolution of service names)
-    resolver 127.0.0.11 valid=10s ipv6=off;
+    # DNS resolver (dynamic: Docker internal or public DNS for HTTPS upstream)
+    resolver __RESOLVER__;
 
     # API: Serve mc-config.json from shared volume
     location = /api/config {
@@ -19,7 +19,7 @@ server {
     # API: Proxy chat completions to gateway (via gateway-proxy)
     # The gateway-proxy on port 18789 adds CORS headers and routes to gateway:18788
     location /api/gateway/ {
-        set $gateway_upstream http://openclaw:18789;
+        set $gateway_upstream __GATEWAY_UPSTREAM__;
 
         # Strip /api/gateway/ prefix and proxy to upstream
         rewrite ^/api/gateway/(.*) /$1 break;
@@ -27,6 +27,11 @@ server {
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSL support for HTTPS upstreams (Coolify/Traefik public URLs)
+        proxy_ssl_server_name on;
+        proxy_ssl_verify off;
 
         # SSE streaming support
         proxy_http_version 1.1;
@@ -37,6 +42,7 @@ server {
         proxy_read_timeout 300s;
         proxy_connect_timeout 10s;
 
+        # CORS headers (in case upstream doesn't provide them)
         add_header Access-Control-Allow-Origin * always;
         add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
         add_header Access-Control-Allow-Headers "Content-Type, Authorization" always;
@@ -48,7 +54,7 @@ server {
 
     # API: Proxy agent management requests to sidecar (via gateway-proxy /mc-sidecar/)
     location /api/agents {
-        set $gateway_upstream http://openclaw:18789;
+        set $gateway_upstream __GATEWAY_UPSTREAM__;
 
         # Rewrite /api/agents → /mc-sidecar/agents
         rewrite ^/api/agents(.*) /mc-sidecar/agents$1 break;
@@ -56,6 +62,8 @@ server {
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+        proxy_ssl_verify off;
         proxy_connect_timeout 10s;
         proxy_read_timeout 30s;
 
@@ -70,7 +78,7 @@ server {
 
     # API: Proxy file browsing requests to sidecar (via gateway-proxy /mc-sidecar/)
     location /api/files/ {
-        set $gateway_upstream http://openclaw:18789;
+        set $gateway_upstream __GATEWAY_UPSTREAM__;
 
         # Rewrite /api/files/ → /mc-sidecar/files/
         rewrite ^/api/files/(.*) /mc-sidecar/files/$1 break;
@@ -78,6 +86,8 @@ server {
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+        proxy_ssl_verify off;
         proxy_connect_timeout 10s;
         proxy_read_timeout 30s;
 

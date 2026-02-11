@@ -122,7 +122,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     }
   },
   "gateway": {
-  "port": 18789,
+  "port": 18788,
   "mode": "local",
     "bind": "lan",
     "controlUi": {
@@ -377,6 +377,35 @@ fi
 # Run OpenClaw
 # ----------------------------
 ulimit -n 65535
+
+# ----------------------------
+# Migrate existing configs: gateway port 18789 → 18788
+# (The gateway-proxy now sits on 18789, gateway moves to 18788)
+# ----------------------------
+if [ -f "$CONFIG_FILE" ]; then
+  CURRENT_GW_PORT=$(jq -r '.gateway.port // 18789' "$CONFIG_FILE" 2>/dev/null)
+  if [ "$CURRENT_GW_PORT" = "18789" ]; then
+    echo "🔄 Migrating gateway port 18789 → 18788 (proxy takes 18789)..."
+    tmp="$(mktemp)"
+    jq '.gateway.port = 18788' "$CONFIG_FILE" > "$tmp" && mv "$tmp" "$CONFIG_FILE"
+  fi
+fi
+
+# ----------------------------
+# Start Gateway Proxy (port 18789 → gateway:18788 + sidecar:18791)
+# ----------------------------
+if [ -f scripts/gateway-proxy.js ]; then
+  echo "🔀 Starting gateway proxy on port 18789..."
+  GATEWAY_PROXY_PORT=18789 \
+  OPENCLAW_INTERNAL_GATEWAY_PORT=18788 \
+  MC_SIDECAR_PORT="${MC_SIDECAR_PORT:-18791}" \
+  node scripts/gateway-proxy.js &
+  PROXY_PID=$!
+  echo "   Gateway proxy PID: $PROXY_PID"
+  # Give proxy a moment to bind
+  sleep 1
+fi
+
 # ----------------------------
 # Banner & Access Info
 # ----------------------------
@@ -409,6 +438,11 @@ echo "      openclaw-approve"
 echo "   3. To start the onboarding wizard:"
 echo "      openclaw onboard"
 echo ""
+echo "🔀 Architecture: proxy(:18789) → gateway(:18788) + sidecar(:${MC_SIDECAR_PORT:-18791})"
+echo "   Sidecar accessible at: /mc-sidecar/ (via proxy)"
 echo "=================================================================="
 echo "🔧 Current ulimit is: $(ulimit -n)"
+
+# The gateway runs on port 18788 (proxy sits on 18789)
+# Use exec to replace shell with gateway process (proxy runs as background child)
 exec openclaw gateway run

@@ -48,7 +48,8 @@ services:
       BUN_INSTALL: /data/.bun
       # Map OpenClaw vars
       OPENCLAW_GATEWAY_BIND: lan
-      OPENCLAW_GATEWAY_PORT: 18789
+      # Gateway binary listens on 18788; gateway-proxy.js on 18789 adds routing + CORS
+      OPENCLAW_GATEWAY_PORT: 18788
       # Host ports (used by bootstrap.sh to generate user-facing URLs)
       OPENCLAW_HOST_PORT: ${OPENCLAW_HOST_PORT:-${OPENCLAW_GATEWAY_PORT:-18789}}
       MC_HOST_PORT: ${MC_HOST_PORT:-${MC_PORT:-3000}}
