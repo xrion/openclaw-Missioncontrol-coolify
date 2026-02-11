@@ -106,7 +106,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
         "enabled": true
       },
       "telegram": {
-        "enabled": true
+        "enabled": false
       },
       "google-antigravity-auth": {
         "enabled": true
