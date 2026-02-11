@@ -19,6 +19,7 @@ export function useAgentChat() {
 
   const agents = config?.agents ?? [];
   const token = config?.gatewayToken ?? "";
+  const gatewayUrl = config?.gatewayUrl ?? "";
 
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [messagesByAgent, setMessagesByAgent] = useState<
@@ -51,7 +52,7 @@ export function useAgentChat() {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!activeAgent || !token || sending) return;
+      if (!activeAgent || !token || !gatewayUrl || sending) return;
 
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
@@ -92,15 +93,17 @@ export function useAgentChat() {
       try {
         const apiMessages = buildApiMessages(activeAgent, text);
 
-        const res = await fetch("/api/gateway/v1/chat/completions", {
+        // Use token in query param to avoid custom headers that trigger CORS preflight
+        const url = new URL(`${gatewayUrl}/v1/chat/completions`);
+        url.searchParams.set("token", token);
+
+        const res = await fetch(url.toString(), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            "x-openclaw-agent-id": activeAgent,
           },
           body: JSON.stringify({
-            model: "openclaw",
+            model: `openclaw:${activeAgent}`,
             stream: true,
             messages: apiMessages,
             user: `mc-chat-${activeAgent}`,
@@ -190,7 +193,7 @@ export function useAgentChat() {
         abortRef.current = null;
       }
     },
-    [activeAgent, token, sending, messagesByAgent]
+    [activeAgent, token, gatewayUrl, sending, messagesByAgent]
   );
 
   const clearHistory = useCallback(() => {
