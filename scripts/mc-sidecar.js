@@ -35,6 +35,7 @@ const DEFAULT_FILE_ROOTS = [
 ];
 
 const FILE_ROOTS = DEFAULT_FILE_ROOTS.filter((root) => fs.existsSync(root.path));
+const SHOW_HIDDEN_FILES = process.env.MC_SHOW_HIDDEN_FILES === "1";
 
 // --- Helpers ---
 
@@ -174,6 +175,13 @@ function getFileRoot(rootId) {
 function normalizeRelativePath(inputPath) {
   const raw = (inputPath || ".").trim();
   return raw === "" ? "." : raw;
+}
+
+function hasHiddenSegment(relativePath) {
+  return normalizeRelativePath(relativePath)
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .some((segment) => segment.startsWith("."));
 }
 
 function toUnixPath(inputPath) {
@@ -394,6 +402,9 @@ function handleFilesList(req, res, url) {
     }
 
     const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    if (!SHOW_HIDDEN_FILES && requestedPath !== "." && hasHiddenSegment(requestedPath)) {
+      return sendJson(res, 403, { error: "Access to hidden paths is disabled" });
+    }
     const absolutePath = resolveSafePath(root.path, requestedPath);
     const stat = fs.statSync(absolutePath);
 
@@ -403,6 +414,7 @@ function handleFilesList(req, res, url) {
 
     const entries = fs
       .readdirSync(absolutePath, { withFileTypes: true })
+      .filter((entry) => SHOW_HIDDEN_FILES || !entry.name.startsWith("."))
       .map((entry) => {
         const entryPath = path.join(absolutePath, entry.name);
         let entryStat = null;
@@ -457,6 +469,9 @@ function handleFilesRead(req, res, url) {
     }
 
     const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    if (!SHOW_HIDDEN_FILES && hasHiddenSegment(requestedPath)) {
+      return sendJson(res, 403, { error: "Access to hidden paths is disabled" });
+    }
     const absolutePath = resolveSafePath(root.path, requestedPath);
     const stat = fs.statSync(absolutePath);
 
@@ -508,6 +523,9 @@ function handleFilesDownload(req, res, url) {
     }
 
     const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    if (!SHOW_HIDDEN_FILES && hasHiddenSegment(requestedPath)) {
+      return sendJson(res, 403, { error: "Access to hidden paths is disabled" });
+    }
     const absolutePath = resolveSafePath(root.path, requestedPath);
     const stat = fs.statSync(absolutePath);
 

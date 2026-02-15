@@ -27,6 +27,7 @@ export interface ProspectionProject {
   proposedService: string;
   setupFee: number;
   monthlyFee: number;
+  actualValue: number;
   interestLevel: InterestLevel;
   exchangeHistory: string[];
   needsHumanAction: boolean;
@@ -35,6 +36,9 @@ export interface ProspectionProject {
   tokenConsumption: number;
   scoreValidation: ScoreValidation;
   draftMessage: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
 }
 
 export interface ToolRequirement {
@@ -77,6 +81,7 @@ export interface UpdateProspectionProjectInput {
   proposedService?: string;
   setupFee?: number;
   monthlyFee?: number;
+  actualValue?: number;
   interestLevel?: InterestLevel;
   exchangeHistory?: string[];
   needsHumanAction?: boolean;
@@ -84,6 +89,10 @@ export interface UpdateProspectionProjectInput {
   tokenConsumption?: number;
   scoreValidation?: ScoreValidation;
   draftMessage?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  archived?: boolean;
 }
 
 export const PROJECT_STAGES: { key: ProjectStage; label: string }[] = [

@@ -18,6 +18,7 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     proposedService: "Website redesign + AI chatbot",
     setupFee: 2400,
     monthlyFee: 180,
+    actualValue: 0,
     interestLevel: "explicit",
     exchangeHistory: [
       "Initial outreach email sent",
@@ -30,6 +31,9 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     scoreValidation: "x1",
     draftMessage:
       "Thanks for your interest. I can share three slots for a scoping call.",
+    contactName: "Dr. S. Hart",
+    contactEmail: "contact@horizon-clinic.example",
+    contactPhone: "+33 1 00 00 00 01",
   },
   {
     id: "pp_002",
@@ -41,6 +45,7 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     proposedService: "Automation + ERP/CRM integration",
     setupFee: 3200,
     monthlyFee: 250,
+    actualValue: 0,
     interestLevel: "medium",
     exchangeHistory: ["Quick audit completed", "First personalized message sent"],
     needsHumanAction: false,
@@ -50,6 +55,9 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     scoreValidation: "pending",
     draftMessage:
       "Quick follow-up: we can save you 6 to 8 hours per week on quote-to-invoice operations.",
+    contactName: "M. Leroux",
+    contactEmail: "ops@atelier-mekanica.example",
+    contactPhone: "",
   },
   {
     id: "pp_003",
@@ -61,6 +69,7 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     proposedService: "Custom development",
     setupFee: 1500,
     monthlyFee: 0,
+    actualValue: 0,
     interestLevel: "low",
     exchangeHistory: ["Need detected on forum", "Qualification message sent"],
     needsHumanAction: false,
@@ -70,6 +79,9 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     scoreValidation: "pending",
     draftMessage:
       "To scope this correctly, can you share your technical constraints and expected timeline?",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
   },
   {
     id: "pp_004",
@@ -81,6 +93,7 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     proposedService: "AI integration + automations",
     setupFee: 2800,
     monthlyFee: 350,
+    actualValue: 5200,
     interestLevel: "high",
     exchangeHistory: ["Opportunity spotted on platform", "First contact accepted"],
     needsHumanAction: false,
@@ -90,6 +103,9 @@ export const DEMO_PROSPECTION_PROJECTS: ProspectionProject[] = [
     scoreValidation: "x2",
     draftMessage:
       "We can deploy an AI-assisted onboarding flow in two weeks, with KPI tracking from month one.",
+    contactName: "Ana Rivera",
+    contactEmail: "ana@ledgerflow.example",
+    contactPhone: "",
   },
 ];
 
@@ -148,6 +164,13 @@ export function missingProjectFields(project: ProspectionProject): string[] {
   if (!project.industry.trim()) missing.push("Industry");
   if (!project.identifiedNeed.trim()) missing.push("Identified need");
   if (!project.proposedService.trim()) missing.push("Proposed service");
+  if (
+    !project.contactName.trim() &&
+    !project.contactEmail.trim() &&
+    !project.contactPhone.trim()
+  ) {
+    missing.push("Contact");
+  }
   if (project.exchangeHistory.length === 0) missing.push("Exchange history");
   return missing;
 }

@@ -198,6 +198,12 @@ export interface MCData {
     projectId: string,
     patch: UpdateProspectionProjectInput
   ) => unknown | Promise<unknown>;
+  archiveProspectionProject: (
+    projectId: string
+  ) => unknown | Promise<unknown>;
+  deleteProspectionProject: (
+    projectId: string
+  ) => unknown | Promise<unknown>;
   upsertProspectionTool: (args: {
     key: string;
     label: string;
@@ -321,6 +327,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       proposedService: args.proposedService,
       setupFee: args.setupFee,
       monthlyFee: args.monthlyFee,
+      actualValue: 0,
       interestLevel: "none",
       exchangeHistory: [],
       needsHumanAction: false,
@@ -329,6 +336,9 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
       tokenConsumption: 0,
       scoreValidation: "pending",
       draftMessage: "",
+      contactName: "",
+      contactEmail: "",
+      contactPhone: "",
     };
 
     setState((prev) => ({
@@ -377,6 +387,24 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const archiveProspectionProject = useCallback((projectId: string) => {
+    setState((prev) => ({
+      ...prev,
+      prospectionProjects: prev.prospectionProjects.filter(
+        (project) => project.id !== projectId
+      ),
+    }));
+  }, []);
+
+  const deleteProspectionProject = useCallback((projectId: string) => {
+    setState((prev) => ({
+      ...prev,
+      prospectionProjects: prev.prospectionProjects.filter(
+        (project) => project.id !== projectId
+      ),
+    }));
+  }, []);
+
   const updateProspectionSettings = useCallback(
     (args: { settings: ProspectionSettings; updatedBy: string }) => {
       void args.updatedBy;
@@ -401,6 +429,8 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     assignTask,
     createProspectionProject,
     updateProspectionProject,
+    archiveProspectionProject,
+    deleteProspectionProject,
     upsertProspectionTool,
     updateProspectionSettings,
     isDemoMode: true,

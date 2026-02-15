@@ -20,12 +20,11 @@ interface ProjectManagementViewProps {
   agentFilter: string | null;
 }
 
-type ProjectTab = "mission" | "pipeline" | "crm" | "activation";
+type ProjectTab = "mission" | "pipeline" | "activation";
 
 const TAB_LIST: { key: ProjectTab; label: string }[] = [
   { key: "mission", label: "Mission" },
   { key: "pipeline", label: "Pipeline" },
-  { key: "crm", label: "CRM" },
   { key: "activation", label: "Activation" },
 ];
 
@@ -74,6 +73,11 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function formatActualValue(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return formatCurrency(value);
+}
+
 export default function ProjectManagementView({
   agentFilter,
 }: ProjectManagementViewProps) {
@@ -83,6 +87,8 @@ export default function ProjectManagementView({
     settings,
     createProject,
     updateProject,
+    archiveProject,
+    deleteProject,
     upsertTool,
     saveSettings,
   } = useProspection();
@@ -94,6 +100,7 @@ export default function ProjectManagementView({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [industryFocus, setIndustryFocus] = useState("Medical");
   const [historyDrafts, setHistoryDrafts] = useState<Record<string, string>>({});
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     setSettingsDraft(settings);
@@ -103,6 +110,17 @@ export default function ProjectManagementView({
     if (!agentFilter) return projects;
     return projects.filter((project) => project.ownerAgentId === agentFilter);
   }, [projects, agentFilter]);
+
+  useEffect(() => {
+    if (filteredProjects.length === 0) {
+      setSelectedProjectId(null);
+      return;
+    }
+    const found = filteredProjects.some((project) => project.id === selectedProjectId);
+    if (!found) {
+      setSelectedProjectId(filteredProjects[0].id);
+    }
+  }, [filteredProjects, selectedProjectId]);
 
   const totalTokens = useMemo(
     () => filteredProjects.reduce((sum, project) => sum + project.tokenConsumption, 0),
@@ -222,6 +240,25 @@ export default function ProjectManagementView({
           filteredProjects.length) *
         100;
 
+  const selectedProject =
+    filteredProjects.find((project) => project.id === selectedProjectId) ?? null;
+
+  const archiveSelectedProject = async () => {
+    if (!selectedProject) return;
+    await archiveProject(selectedProject.id);
+    setSelectedProjectId(null);
+  };
+
+  const deleteSelectedProject = async () => {
+    if (!selectedProject) return;
+    const confirmed = window.confirm(
+      `Delete "${selectedProject.company}" permanently?`
+    );
+    if (!confirmed) return;
+    await deleteProject(selectedProject.id);
+    setSelectedProjectId(null);
+  };
+
   return (
     <div className="h-full overflow-y-auto scrollbar-thin p-4 space-y-4">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
@@ -237,7 +274,7 @@ export default function ProjectManagementView({
               onClick={() => void createProjectQuick()}
               className="mt-2 px-2.5 py-1.5 text-xs font-medium rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
             >
-              + New CRM project
+              + New opportunity
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-[280px]">
@@ -353,260 +390,345 @@ export default function ProjectManagementView({
       )}
 
       {activeTab === "pipeline" && (
-        <section className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">Prospecting pipeline</h3>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {PROJECT_STAGES.map((stage) => {
-              const stageProjects = filteredProjects.filter(
-                (project) => project.stage === stage.key
-              );
-              return (
-                <div
-                  key={stage.key}
-                  className="min-w-[260px] max-w-[260px] rounded-lg bg-surface-50 border border-gray-200"
-                >
-                  <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-                    <p className="text-xs font-semibold text-gray-700">{stage.label}</p>
-                    <span className="text-xs rounded-full bg-white border border-gray-200 px-2 py-0.5 text-gray-500">
-                      {stageProjects.length}
-                    </span>
-                  </div>
-                  <div className="p-2 space-y-2 max-h-[440px] overflow-y-auto scrollbar-thin">
-                    {stageProjects.map((project) => {
-                      const missing = missingProjectFields(project);
-                      return (
-                        <article
-                          key={project.id}
-                          className="bg-white border border-gray-200 rounded-md p-2.5 space-y-2"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="text-sm font-medium text-gray-800">{project.company}</h4>
-                            <span className="text-[10px] text-gray-500 bg-surface-100 rounded px-1.5 py-0.5">
-                              {project.ownerAgentId}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {project.industry} • {project.region}
-                          </div>
-                          <div className="text-xs text-gray-700">
-                            Potential value: {formatCurrency(computeContractValue(project.setupFee, project.monthlyFee))}
-                          </div>
-                          <select
-                            value={project.stage}
-                            onChange={(event) =>
-                              updateProjectStage(project.id, event.target.value as ProjectStage)
-                            }
-                            className="w-full text-xs border border-gray-200 rounded-md px-2 py-1"
-                          >
-                            {PROJECT_STAGES.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          {missing.length > 0 && (
-                            <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-1">
-                              Missing data: {missing.join(", ")}
-                            </div>
-                          )}
-                        </article>
-                      );
-                    })}
-                    {stageProjects.length === 0 && (
-                      <div className="text-xs text-gray-400 text-center py-6">No projects</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "crm" && (
         <section className="space-y-3">
-          {filteredProjects.length === 0 && (
-            <article className="bg-white border border-dashed border-gray-300 rounded-xl p-6 text-center">
-              <p className="text-sm text-gray-600">
-                No CRM projects for the current filter.
-              </p>
-              <button
-                onClick={() => void createProjectQuick()}
-                className="mt-3 px-3 py-1.5 text-sm rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
-              >
-                Create first project
-              </button>
-            </article>
-          )}
-          {filteredProjects.map((project) => {
-            const missing = missingProjectFields(project);
-            const contractValue = computeContractValue(project.setupFee, project.monthlyFee);
-
-            return (
-              <article key={project.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-800">{project.company}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Source: {project.source || "To fill"} • Industry: {project.industry || "To fill"}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">Potential value</p>
-                    <p className="text-sm font-semibold text-gray-800">{formatCurrency(contractValue)}</p>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Identified need</label>
-                    <textarea
-                      value={project.identifiedNeed}
-                      onChange={(event) =>
-                        persistProjectPatch(project.id, { identifiedNeed: event.target.value })
-                      }
-                      rows={2}
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Proposed service</label>
-                    <textarea
-                      value={project.proposedService}
-                      onChange={(event) =>
-                        persistProjectPatch(project.id, { proposedService: event.target.value })
-                      }
-                      rows={2}
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Setup</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={project.setupFee}
-                      onChange={(event) =>
-                        persistProjectPatch(project.id, { setupFee: Number(event.target.value) || 0 })
-                      }
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Monthly</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={project.monthlyFee}
-                      onChange={(event) =>
-                        persistProjectPatch(project.id, { monthlyFee: Number(event.target.value) || 0 })
-                      }
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Interest level</label>
-                    <select
-                      value={project.interestLevel}
-                      onChange={(event) =>
-                        persistProjectPatch(project.id, { interestLevel: event.target.value as ProspectionProject["interestLevel"] })
-                      }
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
-                    >
-                      <option value="none">none</option>
-                      <option value="low">low</option>
-                      <option value="medium">medium</option>
-                      <option value="high">high</option>
-                      <option value="explicit">explicit</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Score (human)</label>
-                    <select
-                      value={project.scoreValidation}
-                      onChange={(event) =>
-                        updateProjectScore(project.id, event.target.value as ScoreValidation)
-                      }
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
-                    >
-                      <option value="pending">pending</option>
-                      <option value="x1">x1</option>
-                      <option value="x2">x2</option>
-                      <option value="x8">x8</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid lg:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Exchange history</label>
-                    <ul className="mt-1 space-y-1 text-xs text-gray-600">
-                      {project.exchangeHistory.map((entry, idx) => (
-                        <li key={`${project.id}_hist_${idx}`} className="bg-surface-50 border border-gray-100 rounded px-2 py-1">
-                          {entry}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="flex gap-2 mt-2">
-                      <input
-                        type="text"
-                        value={historyDrafts[project.id] ?? ""}
-                        onChange={(event) =>
-                          setHistoryDrafts((current) => ({
-                            ...current,
-                            [project.id]: event.target.value,
-                          }))
-                        }
-                        placeholder="New exchange..."
-                        className="flex-1 text-xs border border-gray-200 rounded-md px-2 py-1"
-                      />
-                      <button
-                        onClick={() => addHistoryItem(project.id)}
-                        className="px-2 py-1 text-xs rounded-md bg-surface-100 hover:bg-surface-200 text-gray-700"
-                      >
-                        Add
-                      </button>
+          <article className="bg-white border border-gray-200 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Prospecting pipeline</h3>
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {PROJECT_STAGES.map((stage) => {
+                const stageProjects = filteredProjects.filter(
+                  (project) => project.stage === stage.key
+                );
+                return (
+                  <div
+                    key={stage.key}
+                    className="min-w-[260px] max-w-[260px] rounded-lg bg-surface-50 border border-gray-200"
+                  >
+                    <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-700">{stage.label}</p>
+                      <span className="text-xs rounded-full bg-white border border-gray-200 px-2 py-0.5 text-gray-500">
+                        {stageProjects.length}
+                      </span>
+                    </div>
+                    <div className="p-2 space-y-2 max-h-[440px] overflow-y-auto scrollbar-thin">
+                      {stageProjects.map((project) => {
+                        const missing = missingProjectFields(project);
+                        const isSelected = selectedProjectId === project.id;
+                        return (
+                          <article
+                            key={project.id}
+                            onClick={() => setSelectedProjectId(project.id)}
+                            className={`cursor-pointer bg-white border rounded-md p-2.5 space-y-2 ${
+                              isSelected
+                                ? "border-blue-300 ring-1 ring-blue-200"
+                                : "border-gray-200"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="text-sm font-medium text-gray-800">{project.company}</h4>
+                              <span className="text-[10px] text-gray-500 bg-surface-100 rounded px-1.5 py-0.5">
+                                {project.ownerAgentId}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {project.industry || "No industry"} • {project.region}
+                            </div>
+                            {(project.contactName || project.contactEmail || project.contactPhone) && (
+                              <div className="text-[11px] text-gray-600">
+                                Contact: {project.contactName || project.contactEmail || project.contactPhone}
+                              </div>
+                            )}
+                            <div className="text-xs text-gray-700">
+                              Setup: {formatCurrency(project.setupFee)} • Monthly: {formatCurrency(project.monthlyFee)}
+                            </div>
+                            <div className="text-xs text-gray-700">
+                              Estimated value: {formatCurrency(computeContractValue(project.setupFee, project.monthlyFee))}
+                            </div>
+                            <div className="text-xs text-gray-700">
+                              Actual value: {formatActualValue(project.actualValue)}
+                            </div>
+                            <select
+                              value={project.stage}
+                              onChange={(event) =>
+                                updateProjectStage(project.id, event.target.value as ProjectStage)
+                              }
+                              onClick={(event) => event.stopPropagation()}
+                              className="w-full text-xs border border-gray-200 rounded-md px-2 py-1"
+                            >
+                              {PROJECT_STAGES.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            {missing.length > 0 && (
+                              <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-1">
+                                Missing data: {missing.join(", ")}
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                      {stageProjects.length === 0 && (
+                        <div className="text-xs text-gray-400 text-center py-6">No projects</div>
+                      )}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </article>
 
-                  <div>
-                    <label className="text-xs font-medium text-gray-500">Prepared draft</label>
-                    <textarea
-                      value={project.draftMessage}
+          {!selectedProject && (
+            <article className="bg-white border border-dashed border-gray-300 rounded-xl p-6 text-center">
+              <p className="text-sm text-gray-600">
+                Select an opportunity in the pipeline to edit details.
+              </p>
+              {filteredProjects.length === 0 && (
+                <button
+                  onClick={() => void createProjectQuick()}
+                  className="mt-3 px-3 py-1.5 text-sm rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
+                >
+                  Create first opportunity
+                </button>
+              )}
+            </article>
+          )}
+
+          {selectedProject && (
+            <article className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">{selectedProject.company}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Source: {selectedProject.source || "To fill"} • Industry: {selectedProject.industry || "To fill"}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500">Estimated value</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {formatCurrency(computeContractValue(selectedProject.setupFee, selectedProject.monthlyFee))}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Actual value</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {formatActualValue(selectedProject.actualValue)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Identified need</label>
+                  <textarea
+                    value={selectedProject.identifiedNeed}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { identifiedNeed: event.target.value })
+                    }
+                    rows={2}
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Proposed service</label>
+                  <textarea
+                    value={selectedProject.proposedService}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { proposedService: event.target.value })
+                    }
+                    rows={2}
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Contact name</label>
+                  <input
+                    type="text"
+                    value={selectedProject.contactName}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { contactName: event.target.value })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Contact email</label>
+                  <input
+                    type="email"
+                    value={selectedProject.contactEmail}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { contactEmail: event.target.value })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Contact phone</label>
+                  <input
+                    type="text"
+                    value={selectedProject.contactPhone}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { contactPhone: event.target.value })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Setup</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={selectedProject.setupFee}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { setupFee: Number(event.target.value) || 0 })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Monthly</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={selectedProject.monthlyFee}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { monthlyFee: Number(event.target.value) || 0 })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Actual value</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={selectedProject.actualValue}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { actualValue: Number(event.target.value) || 0 })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Interest level</label>
+                  <select
+                    value={selectedProject.interestLevel}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, {
+                        interestLevel: event.target.value as ProspectionProject["interestLevel"],
+                      })
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  >
+                    <option value="none">none</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="explicit">explicit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Score (human)</label>
+                  <select
+                    value={selectedProject.scoreValidation}
+                    onChange={(event) =>
+                      updateProjectScore(selectedProject.id, event.target.value as ScoreValidation)
+                    }
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1"
+                  >
+                    <option value="pending">pending</option>
+                    <option value="x1">x1</option>
+                    <option value="x2">x2</option>
+                    <option value="x8">x8</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Exchange history</label>
+                  <ul className="mt-1 space-y-1 text-xs text-gray-600">
+                    {selectedProject.exchangeHistory.map((entry, idx) => (
+                      <li key={`${selectedProject.id}_hist_${idx}`} className="bg-surface-50 border border-gray-100 rounded px-2 py-1">
+                        {entry}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={historyDrafts[selectedProject.id] ?? ""}
                       onChange={(event) =>
-                        persistProjectPatch(project.id, { draftMessage: event.target.value })
+                        setHistoryDrafts((current) => ({
+                          ...current,
+                          [selectedProject.id]: event.target.value,
+                        }))
                       }
-                      rows={4}
-                      className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
+                      placeholder="New exchange..."
+                      className="flex-1 text-xs border border-gray-200 rounded-md px-2 py-1"
                     />
-                    <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={project.needsHumanAction}
-                        onChange={(event) =>
-                          persistProjectPatch(project.id, {
-                            needsHumanAction: event.target.checked,
-                            stage: event.target.checked ? "human_handoff" : project.stage,
-                          })
-                        }
-                      />
-                      Human action required
-                    </label>
-                    <p className="text-[11px] text-gray-500 mt-2">{scoreLabel(project.scoreValidation)}</p>
+                    <button
+                      onClick={() => addHistoryItem(selectedProject.id)}
+                      className="px-2 py-1 text-xs rounded-md bg-surface-100 hover:bg-surface-200 text-gray-700"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
 
-                {missing.length > 0 && (
-                  <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                    Missing information detected. Please provide explicitly: {missing.join(", ")}.
-                  </div>
-                )}
-              </article>
-            );
-          })}
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Prepared draft</label>
+                  <textarea
+                    value={selectedProject.draftMessage}
+                    onChange={(event) =>
+                      persistProjectPatch(selectedProject.id, { draftMessage: event.target.value })
+                    }
+                    rows={4}
+                    className="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 resize-none"
+                  />
+                  <label className="inline-flex items-center gap-2 mt-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedProject.needsHumanAction}
+                      onChange={(event) =>
+                        persistProjectPatch(selectedProject.id, {
+                          needsHumanAction: event.target.checked,
+                          stage: event.target.checked ? "human_handoff" : selectedProject.stage,
+                        })
+                      }
+                    />
+                    Human action required
+                  </label>
+                  <p className="text-[11px] text-gray-500 mt-2">{scoreLabel(selectedProject.scoreValidation)}</p>
+                </div>
+              </div>
+
+              {missingProjectFields(selectedProject).length > 0 && (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  Missing information detected. Please provide explicitly: {missingProjectFields(selectedProject).join(", ")}.
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-gray-100 flex gap-2">
+                <button
+                  onClick={() => void archiveSelectedProject()}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-amber-100 text-amber-800 hover:bg-amber-200"
+                >
+                  Archive
+                </button>
+                <button
+                  onClick={() => void deleteSelectedProject()}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-rose-100 text-rose-800 hover:bg-rose-200"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          )}
         </section>
       )}
 

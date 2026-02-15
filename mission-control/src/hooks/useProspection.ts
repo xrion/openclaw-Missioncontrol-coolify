@@ -13,6 +13,8 @@ export function useProspection() {
     prospectionSettings,
     createProspectionProject,
     updateProspectionProject,
+    archiveProspectionProject,
+    deleteProspectionProject,
     upsertProspectionTool,
     updateProspectionSettings,
   } = useMCData();
@@ -25,6 +27,10 @@ export function useProspection() {
       createProspectionProject(args),
     updateProject: (projectId: string, patch: UpdateProspectionProjectInput) =>
       updateProspectionProject(projectId, patch),
+    archiveProject: (projectId: string) =>
+      archiveProspectionProject(projectId),
+    deleteProject: (projectId: string) =>
+      deleteProspectionProject(projectId),
     upsertTool: (args: {
       key: string;
       label: string;

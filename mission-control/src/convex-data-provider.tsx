@@ -59,6 +59,7 @@ export function ConvexDataProvider({
       proposedService: project.proposedService,
       setupFee: project.setupFee,
       monthlyFee: project.monthlyFee,
+      actualValue: project.actualValue ?? 0,
       interestLevel: project.interestLevel,
       exchangeHistory: project.exchangeHistory ?? [],
       needsHumanAction: project.needsHumanAction,
@@ -67,6 +68,9 @@ export function ConvexDataProvider({
       tokenConsumption: project.tokenConsumption,
       scoreValidation: project.scoreValidation,
       draftMessage: project.draftMessage,
+      contactName: project.contactName ?? "",
+      contactEmail: project.contactEmail ?? "",
+      contactPhone: project.contactPhone ?? "",
     })
   );
 
@@ -98,6 +102,8 @@ export function ConvexDataProvider({
 
   const createProspectionProjectMut = useMutation(convexApi.prospection.createProject);
   const updateProspectionProjectMut = useMutation(convexApi.prospection.updateProject);
+  const archiveProspectionProjectMut = useMutation(convexApi.prospection.archiveProject);
+  const deleteProspectionProjectMut = useMutation(convexApi.prospection.deleteProject);
   const upsertProspectionToolMut = useMutation(convexApi.prospection.upsertTool);
   const upsertProspectionSettingsMut = useMutation(convexApi.prospection.upsertSettings);
 
@@ -129,6 +135,7 @@ export function ConvexDataProvider({
       proposedService: args.proposedService,
       setupFee: args.setupFee,
       monthlyFee: args.monthlyFee,
+      actualValue: 0,
       interestLevel: "none",
       exchangeHistory: [],
       needsHumanAction: false,
@@ -137,6 +144,9 @@ export function ConvexDataProvider({
       tokenConsumption: 0,
       scoreValidation: "pending",
       draftMessage: "",
+      contactName: "",
+      contactEmail: "",
+      contactPhone: "",
       createdBy: args.createdBy,
     });
   };
@@ -159,6 +169,20 @@ export function ConvexDataProvider({
     updatedBy: string;
   }) => {
     return upsertProspectionToolMut(args);
+  };
+
+  const archiveProspectionProject = (projectId: string) => {
+    return archiveProspectionProjectMut({
+      projectId,
+      updatedBy: "human",
+    });
+  };
+
+  const deleteProspectionProject = (projectId: string) => {
+    return deleteProspectionProjectMut({
+      projectId,
+      deletedBy: "human",
+    });
   };
 
   const updateProspectionSettings = (args: {
@@ -190,6 +214,8 @@ export function ConvexDataProvider({
     assignTask,
     createProspectionProject,
     updateProspectionProject,
+    archiveProspectionProject,
+    deleteProspectionProject,
     upsertProspectionTool,
     updateProspectionSettings,
     isDemoMode: false,

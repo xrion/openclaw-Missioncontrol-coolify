@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   useServerFiles,
   type ServerDirectoryListing,
@@ -22,6 +24,10 @@ function joinPath(parts: string[]): string {
   const filtered = parts.filter((part) => part && part !== ".");
   if (!filtered.length) return ".";
   return filtered.join("/");
+}
+
+function isMarkdownPath(filePath: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(filePath);
 }
 
 export default function ServerFilesView() {
@@ -143,6 +149,23 @@ export default function ServerFilesView() {
     setFileError(null);
   };
 
+  const closePreview = () => {
+    setSelectedFilePath(null);
+    setFilePreview(null);
+    setFileError(null);
+  };
+
+  useEffect(() => {
+    if (!selectedFilePath) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closePreview();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedFilePath]);
+
   return (
     <div className="h-full p-4 flex flex-col gap-3 overflow-hidden">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
@@ -186,7 +209,7 @@ export default function ServerFilesView() {
         )}
       </section>
 
-      <section className="flex-1 min-h-0 grid lg:grid-cols-2 gap-3">
+      <section className="flex-1 min-h-0">
         <article className="bg-white border border-gray-200 rounded-xl flex flex-col min-h-0">
           <div className="p-3 border-b border-gray-100 space-y-2">
             <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
@@ -264,56 +287,73 @@ export default function ServerFilesView() {
             )}
           </div>
         </article>
-
-        <article className="bg-white border border-gray-200 rounded-xl flex flex-col min-h-0">
-          <div className="p-3 border-b border-gray-100 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800">Preview</h3>
-              <p className="text-xs text-gray-500">
-                {selectedFilePath || "Select a file to preview"}
-              </p>
-            </div>
-            {selectedRootId && selectedFilePath && (
-              <a
-                href={buildDownloadUrl(selectedRootId, selectedFilePath)}
-                className="px-2.5 py-1 text-xs rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
-              >
-                Download
-              </a>
-            )}
-          </div>
-
-          <div className="flex-1 min-h-0 overflow-auto scrollbar-thin p-3">
-            {!selectedFilePath && (
-              <p className="text-sm text-gray-400">No file selected.</p>
-            )}
-            {selectedFilePath && loadingFile && (
-              <p className="text-sm text-gray-500">Loading file...</p>
-            )}
-            {selectedFilePath && fileError && !loadingFile && (
-              <p className="text-sm text-rose-700">{fileError}</p>
-            )}
-            {selectedFilePath && filePreview && !loadingFile && (
-              <div className="space-y-3">
-                <div className="text-xs text-gray-500 flex flex-wrap gap-3">
-                  <span>Size: {formatBytes(filePreview.size)}</span>
-                  <span>Updated: {formatDate(filePreview.modifiedAt)}</span>
-                  {filePreview.truncated && <span>Preview truncated</span>}
-                </div>
-                {filePreview.binary ? (
-                  <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
-                    Binary file detected. Use download to inspect it locally.
-                  </div>
-                ) : (
-                  <pre className="text-xs text-gray-800 whitespace-pre-wrap break-words bg-surface-50 border border-gray-100 rounded-md p-3 overflow-auto">
-                    {filePreview.content || ""}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-        </article>
       </section>
+
+      {selectedFilePath && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={closePreview}
+        >
+          <article
+            className="w-full max-w-5xl max-h-[88vh] bg-white border border-gray-200 rounded-xl flex flex-col min-h-0"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-3 border-b border-gray-100 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-800">Preview</h3>
+                <p className="text-xs text-gray-500 truncate">{selectedFilePath}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedRootId && (
+                  <a
+                    href={buildDownloadUrl(selectedRootId, selectedFilePath)}
+                    className="px-2.5 py-1 text-xs rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
+                  >
+                    Download
+                  </a>
+                )}
+                <button
+                  onClick={closePreview}
+                  className="px-2.5 py-1 text-xs rounded-md bg-surface-100 text-gray-700 hover:bg-surface-200"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-auto scrollbar-thin p-3">
+              {loadingFile && <p className="text-sm text-gray-500">Loading file...</p>}
+              {fileError && !loadingFile && (
+                <p className="text-sm text-rose-700">{fileError}</p>
+              )}
+              {filePreview && !loadingFile && (
+                <div className="space-y-3">
+                  <div className="text-xs text-gray-500 flex flex-wrap gap-3">
+                    <span>Size: {formatBytes(filePreview.size)}</span>
+                    <span>Updated: {formatDate(filePreview.modifiedAt)}</span>
+                    {filePreview.truncated && <span>Preview truncated</span>}
+                  </div>
+                  {filePreview.binary ? (
+                    <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+                      Binary file detected. Use download to inspect it locally.
+                    </div>
+                  ) : isMarkdownPath(filePreview.path) ? (
+                    <div className="text-sm text-gray-800 leading-relaxed bg-white border border-gray-100 rounded-md p-3">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {filePreview.content || ""}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <pre className="text-xs text-gray-800 whitespace-pre-wrap break-words bg-surface-50 border border-gray-100 rounded-md p-3 overflow-auto">
+                      {filePreview.content || ""}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
     </div>
   );
 }

@@ -50,12 +50,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function resolvePathValue(
+  record: Record<string, unknown>,
+  keyOrPath: string
+): unknown {
+  if (!keyOrPath.includes(".")) return record[keyOrPath];
+  const path = keyOrPath.split(".");
+
+  let current: unknown = record;
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
 function pickFirstValue(
   record: Record<string, unknown>,
   keys: string[]
 ): unknown {
   for (const key of keys) {
-    const value = record[key];
+    const value = resolvePathValue(record, key);
     if (value !== undefined && value !== null && value !== "") {
       return value;
     }
@@ -139,6 +154,11 @@ function toStringArray(value: unknown): string[] {
   return single ? [single] : [];
 }
 
+function joinLabelList(value: unknown): string {
+  const parts = toStringArray(value);
+  return parts.join(", ");
+}
+
 function normalizeRegion(value: unknown): "Europe" | "United States" {
   const normalized = toStringValue(value).toLowerCase();
   if (
@@ -213,37 +233,151 @@ function normalizeOpportunityAsProject(opportunity: any) {
     pickValue(record, ["needsHumanAction", "humanActionRequired", "requiresHuman", "handoffRequested"]),
     stage === "human_handoff"
   );
+  const estimatedValue = toNumberValue(
+    pickValue(record, [
+      "estimatedValue",
+      "estimated_value",
+      "estimatedDealValue",
+      "valueEstimate",
+      "value_estimate",
+    ])
+  );
+  const setupFee = toNumberValue(
+    pickValue(record, ["setupFee", "oneTimeFee", "setupCost", "budgetSetup"]),
+    estimatedValue
+  );
+  const monthlyFee = toNumberValue(
+    pickValue(record, ["monthlyFee", "recurringFee", "retainer", "budgetMonthly"])
+  );
+  const actualValue = toNumberValue(
+    pickValue(record, ["actualValue", "realValue", "finalValue", "dealValue", "contractValue"])
+  );
+  const serviceFromText = toStringValue(
+    pickValue(record, [
+      "proposedService",
+      "service",
+      "offer",
+      "proposal",
+      "solution",
+      "servicePropose",
+      "service_propose",
+      "serviceProposed",
+      "service_proposed",
+    ])
+  );
+  const serviceFromTags = joinLabelList(
+    pickValue(record, [
+      "serviceProposedTags",
+      "service_proposed_tags",
+      "serviceTags",
+      "service_tags",
+      "service propose des tags",
+      "tags",
+      "service.tags",
+    ])
+  );
+  const contactName = toStringValue(
+    pickValue(record, [
+      "contactName",
+      "contact_name",
+      "prospectContactName",
+      "leadContactName",
+      "contact.name",
+      "prospect.contact.name",
+    ])
+  );
+  const contactEmail = toStringValue(
+    pickValue(record, [
+      "contactEmail",
+      "contact_email",
+      "email",
+      "contact.email",
+      "prospect.contact.email",
+    ])
+  );
+  const contactPhone = toStringValue(
+    pickValue(record, [
+      "contactPhone",
+      "contact_phone",
+      "phone",
+      "contact.phone",
+      "prospect.contact.phone",
+      "contact.mobile",
+    ])
+  );
+  const archived = toBooleanValue(
+    pickValue(record, ["archived", "isArchived", "is_archived", "deleted"]),
+    false
+  );
+  const archivedAtRaw = toNumberValue(
+    pickValue(record, ["archivedAt", "archived_at", "deletedAt", "deleted_at"])
+  );
+  const archivedAt = archived && archivedAtRaw > 0 ? archivedAtRaw : undefined;
 
   return {
     _id: opportunity._id,
     _creationTime: opportunity._creationTime ?? Date.now(),
     name:
       toStringValue(
-        pickValue(record, ["name", "company", "title", "organization", "client", "businessName"])
+        pickValue(record, [
+          "name",
+          "company",
+          "title",
+          "organization",
+          "client",
+          "businessName",
+          "prospectName",
+          "prospect_name",
+          "prospect name",
+          "prospect.name",
+        ])
       ) || `Opportunity ${String(opportunity._id ?? "").slice(0, 6)}`,
     source: toStringValue(
       pickValue(record, ["source", "origin", "channel", "platform", "entryPoint"])
     ),
     industry: toStringValue(
-      pickValue(record, ["industry", "sector", "vertical", "segment"])
+      pickValue(record, [
+        "industry",
+        "sector",
+        "vertical",
+        "segment",
+        "prospectIndustry",
+        "prospect_industry",
+        "prospect industry",
+        "prospect.industry",
+      ])
     ),
     region: normalizeRegion(
       pickValue(record, ["region", "geo", "location", "country", "market"])
     ),
     identifiedNeed: toStringValue(
-      pickValue(record, ["identifiedNeed", "need", "problem", "pain", "opportunity", "summary"])
+      pickValue(record, [
+        "identifiedNeed",
+        "need",
+        "problem",
+        "pain",
+        "opportunity",
+        "summary",
+        "painIdentified",
+        "pain_identified",
+        "pain identified",
+        "pain identifie",
+        "pain identifié",
+      ])
     ),
-    proposedService: toStringValue(
-      pickValue(record, ["proposedService", "service", "offer", "proposal", "solution"])
-    ),
-    setupFee: toNumberValue(
-      pickValue(record, ["setupFee", "oneTimeFee", "setupCost", "budgetSetup"])
-    ),
-    monthlyFee: toNumberValue(
-      pickValue(record, ["monthlyFee", "recurringFee", "retainer", "budgetMonthly"])
-    ),
+    proposedService: serviceFromText || serviceFromTags,
+    setupFee,
+    monthlyFee,
+    actualValue,
     interestLevel: normalizeInterestLevel(
-      pickValue(record, ["interestLevel", "interest", "leadTemperature", "temperature", "qualification"])
+      pickValue(record, [
+        "interestLevel",
+        "interest",
+        "interest_level",
+        "leadTemperature",
+        "temperature",
+        "qualification",
+      ])
     ),
     exchangeHistory: toStringArray(
       pickValue(record, ["exchangeHistory", "history", "messages", "notes", "timeline"])
@@ -260,6 +394,11 @@ function normalizeOpportunityAsProject(opportunity: any) {
     draftMessage: toStringValue(
       pickValue(record, ["draftMessage", "messageDraft", "nextMessage", "outreachDraft", "emailDraft"])
     ),
+    contactName,
+    contactEmail,
+    contactPhone,
+    archived,
+    archivedAt,
     createdBy: toStringValue(pickValue(record, ["createdBy", "agentId"]), ownerAgentId),
     updatedAt: toNumberValue(
       pickValue(record, ["updatedAt", "updated_at", "lastUpdated", "lastSeen"]),
@@ -278,6 +417,7 @@ function toCanonicalOpportunityDoc(project: any, updatedAt: number) {
     proposedService: project.proposedService,
     setupFee: project.setupFee,
     monthlyFee: project.monthlyFee,
+    actualValue: project.actualValue,
     interestLevel: project.interestLevel,
     exchangeHistory: project.exchangeHistory,
     needsHumanAction: project.needsHumanAction,
@@ -286,6 +426,11 @@ function toCanonicalOpportunityDoc(project: any, updatedAt: number) {
     tokenConsumption: project.tokenConsumption,
     scoreValidation: project.scoreValidation,
     draftMessage: project.draftMessage,
+    contactName: project.contactName,
+    contactEmail: project.contactEmail,
+    contactPhone: project.contactPhone,
+    archived: Boolean(project.archived),
+    archivedAt: project.archivedAt,
     createdBy: project.createdBy,
     updatedAt,
   };
@@ -296,6 +441,7 @@ export const listProjects = query({
     stage: v.optional(stageValue),
     ownerAgentId: v.optional(v.string()),
     limit: v.optional(v.number()),
+    includeArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const db = ctx.db as any;
@@ -320,6 +466,9 @@ export const listProjects = query({
         (project: any) => project.ownerAgentId === args.ownerAgentId
       );
     }
+    if (!args.includeArchived) {
+      projects = projects.filter((project: any) => !Boolean(project.archived));
+    }
 
     projects.sort(
       (a: any, b: any) =>
@@ -340,6 +489,7 @@ export const createProject = mutation({
     proposedService: v.string(),
     setupFee: v.number(),
     monthlyFee: v.number(),
+    actualValue: v.optional(v.number()),
     interestLevel: interestLevelValue,
     exchangeHistory: v.array(v.string()),
     needsHumanAction: v.boolean(),
@@ -348,6 +498,9 @@ export const createProject = mutation({
     tokenConsumption: v.number(),
     scoreValidation: scoreValidationValue,
     draftMessage: v.string(),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
     createdBy: v.string(),
   },
   handler: async (ctx, args) => {
@@ -355,6 +508,11 @@ export const createProject = mutation({
 
     const id = await db.insert("prospectionProjects", {
       ...args,
+      actualValue: args.actualValue ?? 0,
+      contactName: args.contactName ?? "",
+      contactEmail: args.contactEmail ?? "",
+      contactPhone: args.contactPhone ?? "",
+      archived: false,
       updatedAt: Date.now(),
     });
 
@@ -377,6 +535,7 @@ export const updateProject = mutation({
     proposedService: v.optional(v.string()),
     setupFee: v.optional(v.number()),
     monthlyFee: v.optional(v.number()),
+    actualValue: v.optional(v.number()),
     interestLevel: v.optional(interestLevelValue),
     exchangeHistory: v.optional(v.array(v.string())),
     needsHumanAction: v.optional(v.boolean()),
@@ -384,23 +543,34 @@ export const updateProject = mutation({
     tokenConsumption: v.optional(v.number()),
     scoreValidation: v.optional(scoreValidationValue),
     draftMessage: v.optional(v.string()),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
     updatedBy: v.string(),
   },
   handler: async (ctx, args) => {
     const db = ctx.db as any;
     const { projectId, updatedBy, ...patch } = args;
     const now = Date.now();
+    const nextPatch = { ...patch } as Record<string, unknown>;
+    if (patch.archived === true) {
+      nextPatch.archivedAt = now;
+    }
+    if (patch.archived === false) {
+      nextPatch.archivedAt = undefined;
+    }
     const prospectionProjectId = db.normalizeId("prospectionProjects", projectId);
     const opportunityId = db.normalizeId("opportunities", projectId);
 
     if (prospectionProjectId) {
       await db.patch(prospectionProjectId, {
-        ...patch,
+        ...nextPatch,
         updatedAt: now,
       });
     } else if (opportunityId) {
       await db.patch(opportunityId, {
-        ...patch,
+        ...nextPatch,
         updatedAt: now,
       });
     } else {
@@ -414,6 +584,71 @@ export const updateProject = mutation({
     });
 
     return projectId;
+  },
+});
+
+export const archiveProject = mutation({
+  args: {
+    projectId: v.string(),
+    updatedBy: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const db = ctx.db as any;
+    const now = Date.now();
+    const prospectionProjectId = db.normalizeId("prospectionProjects", args.projectId);
+    const opportunityId = db.normalizeId("opportunities", args.projectId);
+
+    if (prospectionProjectId) {
+      await db.patch(prospectionProjectId, {
+        archived: true,
+        archivedAt: now,
+        updatedAt: now,
+      });
+    } else if (opportunityId) {
+      await db.patch(opportunityId, {
+        archived: true,
+        archivedAt: now,
+        updatedAt: now,
+      });
+    } else {
+      throw new Error(`Unknown projectId: ${args.projectId}`);
+    }
+
+    await db.insert("activities", {
+      agentId: args.updatedBy,
+      type: "project_updated",
+      summary: `${args.updatedBy} archived project ${args.projectId}`,
+    });
+
+    return args.projectId;
+  },
+});
+
+export const deleteProject = mutation({
+  args: {
+    projectId: v.string(),
+    deletedBy: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const db = ctx.db as any;
+    const prospectionProjectId = db.normalizeId("prospectionProjects", args.projectId);
+    const opportunityId = db.normalizeId("opportunities", args.projectId);
+
+    if (prospectionProjectId) {
+      await db.delete(prospectionProjectId);
+    } else if (opportunityId) {
+      await db.delete(opportunityId);
+    } else {
+      throw new Error(`Unknown projectId: ${args.projectId}`);
+    }
+
+    await db.insert("activities", {
+      agentId: args.deletedBy,
+      type: "project_updated",
+      summary: `${args.deletedBy} deleted project ${args.projectId}`,
+    });
+
+    return args.projectId;
   },
 });
 

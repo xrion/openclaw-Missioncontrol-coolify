@@ -142,6 +142,7 @@ export default defineSchema({
     proposedService: v.string(),
     setupFee: v.number(),
     monthlyFee: v.number(),
+    actualValue: v.optional(v.number()),
     interestLevel: v.union(
       v.literal("none"),
       v.literal("low"),
@@ -171,6 +172,11 @@ export default defineSchema({
       v.literal("x8")
     ),
     draftMessage: v.string(),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+    archivedAt: v.optional(v.number()),
     createdBy: v.string(),
     updatedAt: v.number(),
   })
