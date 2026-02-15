@@ -1,6 +1,22 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+const projectStages = [
+  "exploration",
+  "qualification",
+  "first_contact",
+  "follow_up",
+  "interest_detected",
+  "crm_logged",
+  "human_handoff",
+  "performance_review",
+  "strategy_adjustment",
+] as const;
+
+type ProjectStage = (typeof projectStages)[number];
+type InterestLevel = "none" | "low" | "medium" | "high" | "explicit";
+type ScoreValidation = "pending" | "x1" | "x2" | "x8";
+
 const stageValue = v.union(
   v.literal("exploration"),
   v.literal("qualification"),
@@ -13,12 +29,267 @@ const stageValue = v.union(
   v.literal("strategy_adjustment")
 );
 
+const interestLevelValue = v.union(
+  v.literal("none"),
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high"),
+  v.literal("explicit")
+);
+
 const scoreValidationValue = v.union(
   v.literal("pending"),
   v.literal("x1"),
   v.literal("x2"),
   v.literal("x8")
 );
+
+const PROJECT_STAGE_SET = new Set<ProjectStage>(projectStages);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pickFirstValue(
+  record: Record<string, unknown>,
+  keys: string[]
+): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function pickValue(record: Record<string, unknown>, keys: string[]): unknown {
+  const direct = pickFirstValue(record, keys);
+  if (direct !== undefined) return direct;
+
+  const payload = record.payload;
+  if (isRecord(payload)) {
+    return pickFirstValue(payload, keys);
+  }
+
+  return undefined;
+}
+
+function toStringValue(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return fallback;
+}
+
+function toNumberValue(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return fallback;
+
+  const compact = value.trim().replace(/\s+/g, "");
+  if (!compact) return fallback;
+
+  const normalized = compact.includes(",") && compact.includes(".")
+    ? compact.replace(/,/g, "")
+    : compact.replace(",", ".");
+  const clean = normalized.replace(/[^0-9.-]/g, "");
+  const parsed = Number(clean);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toBooleanValue(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (typeof value !== "string") return fallback;
+
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "y", "required"].includes(normalized)) return true;
+  if (["false", "0", "no", "n"].includes(normalized)) return false;
+  return fallback;
+}
+
+function toHistoryEntry(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  if (isRecord(value)) {
+    const text = toStringValue(
+      pickFirstValue(value, ["message", "text", "content", "note", "summary", "title"])
+    );
+    if (text) return text;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(toHistoryEntry)
+      .filter((entry) => entry.length > 0);
+  }
+
+  const single = toHistoryEntry(value);
+  return single ? [single] : [];
+}
+
+function normalizeRegion(value: unknown): "Europe" | "United States" {
+  const normalized = toStringValue(value).toLowerCase();
+  if (
+    normalized.includes("us") ||
+    normalized.includes("usa") ||
+    normalized.includes("united states") ||
+    normalized.includes("north america")
+  ) {
+    return "United States";
+  }
+  return "Europe";
+}
+
+function normalizeInterestLevel(value: unknown): InterestLevel {
+  const normalized = toStringValue(value).toLowerCase();
+  if (!normalized) return "none";
+  if (normalized.includes("explicit") || normalized.includes("confirmed")) return "explicit";
+  if (normalized.includes("high") || normalized.includes("hot")) return "high";
+  if (normalized.includes("medium") || normalized.includes("warm")) return "medium";
+  if (normalized.includes("low") || normalized.includes("cold")) return "low";
+  return "none";
+}
+
+function normalizeStage(value: unknown): ProjectStage {
+  const normalized = toStringValue(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (PROJECT_STAGE_SET.has(normalized as ProjectStage)) {
+    return normalized as ProjectStage;
+  }
+
+  if (normalized.includes("qualif") || normalized.includes("research")) return "qualification";
+  if (normalized.includes("contact") || normalized.includes("outreach")) return "first_contact";
+  if (normalized.includes("follow")) return "follow_up";
+  if (normalized.includes("interest") || normalized.includes("positive")) return "interest_detected";
+  if (normalized.includes("crm") || normalized.includes("record")) return "crm_logged";
+  if (normalized.includes("handoff") || normalized.includes("human") || normalized.includes("review")) {
+    return "human_handoff";
+  }
+  if (normalized.includes("performance")) return "performance_review";
+  if (normalized.includes("strategy") || normalized.includes("adjust")) return "strategy_adjustment";
+  return "exploration";
+}
+
+function normalizeScoreValidation(value: unknown): ScoreValidation {
+  if (typeof value === "number") {
+    if (value >= 8) return "x8";
+    if (value >= 2) return "x2";
+    if (value >= 1) return "x1";
+    return "pending";
+  }
+
+  const normalized = toStringValue(value).toLowerCase();
+  if (!normalized || normalized === "pending") return "pending";
+  if (normalized.includes("x8") || normalized === "8") return "x8";
+  if (normalized.includes("x2") || normalized === "2") return "x2";
+  if (normalized.includes("x1") || normalized === "1") return "x1";
+  return "pending";
+}
+
+function normalizeOpportunityAsProject(opportunity: any) {
+  const record = isRecord(opportunity) ? opportunity : {};
+
+  const ownerAgentId = toStringValue(
+    pickValue(record, ["ownerAgentId", "agentId", "assignedTo", "owner", "createdBy"]),
+    "jarvis"
+  );
+  const stage = normalizeStage(
+    pickValue(record, ["stage", "pipelineStage", "status", "crmStage", "step"])
+  );
+  const needsHumanAction = toBooleanValue(
+    pickValue(record, ["needsHumanAction", "humanActionRequired", "requiresHuman", "handoffRequested"]),
+    stage === "human_handoff"
+  );
+
+  return {
+    _id: opportunity._id,
+    _creationTime: opportunity._creationTime ?? Date.now(),
+    name:
+      toStringValue(
+        pickValue(record, ["name", "company", "title", "organization", "client", "businessName"])
+      ) || `Opportunity ${String(opportunity._id ?? "").slice(0, 6)}`,
+    source: toStringValue(
+      pickValue(record, ["source", "origin", "channel", "platform", "entryPoint"])
+    ),
+    industry: toStringValue(
+      pickValue(record, ["industry", "sector", "vertical", "segment"])
+    ),
+    region: normalizeRegion(
+      pickValue(record, ["region", "geo", "location", "country", "market"])
+    ),
+    identifiedNeed: toStringValue(
+      pickValue(record, ["identifiedNeed", "need", "problem", "pain", "opportunity", "summary"])
+    ),
+    proposedService: toStringValue(
+      pickValue(record, ["proposedService", "service", "offer", "proposal", "solution"])
+    ),
+    setupFee: toNumberValue(
+      pickValue(record, ["setupFee", "oneTimeFee", "setupCost", "budgetSetup"])
+    ),
+    monthlyFee: toNumberValue(
+      pickValue(record, ["monthlyFee", "recurringFee", "retainer", "budgetMonthly"])
+    ),
+    interestLevel: normalizeInterestLevel(
+      pickValue(record, ["interestLevel", "interest", "leadTemperature", "temperature", "qualification"])
+    ),
+    exchangeHistory: toStringArray(
+      pickValue(record, ["exchangeHistory", "history", "messages", "notes", "timeline"])
+    ),
+    needsHumanAction,
+    stage,
+    ownerAgentId,
+    tokenConsumption: toNumberValue(
+      pickValue(record, ["tokenConsumption", "tokens", "tokenCount", "usageTokens", "costTokens"])
+    ),
+    scoreValidation: normalizeScoreValidation(
+      pickValue(record, ["scoreValidation", "score", "humanScore", "validation"])
+    ),
+    draftMessage: toStringValue(
+      pickValue(record, ["draftMessage", "messageDraft", "nextMessage", "outreachDraft", "emailDraft"])
+    ),
+    createdBy: toStringValue(pickValue(record, ["createdBy", "agentId"]), ownerAgentId),
+    updatedAt: toNumberValue(
+      pickValue(record, ["updatedAt", "updated_at", "lastUpdated", "lastSeen"]),
+      toNumberValue(opportunity._creationTime, Date.now())
+    ),
+  };
+}
+
+function toCanonicalOpportunityDoc(project: any, updatedAt: number) {
+  return {
+    name: project.name,
+    source: project.source,
+    industry: project.industry,
+    region: project.region,
+    identifiedNeed: project.identifiedNeed,
+    proposedService: project.proposedService,
+    setupFee: project.setupFee,
+    monthlyFee: project.monthlyFee,
+    interestLevel: project.interestLevel,
+    exchangeHistory: project.exchangeHistory,
+    needsHumanAction: project.needsHumanAction,
+    stage: project.stage,
+    ownerAgentId: project.ownerAgentId,
+    tokenConsumption: project.tokenConsumption,
+    scoreValidation: project.scoreValidation,
+    draftMessage: project.draftMessage,
+    createdBy: project.createdBy,
+    updatedAt,
+  };
+}
 
 export const listProjects = query({
   args: {
@@ -28,7 +299,18 @@ export const listProjects = query({
   },
   handler: async (ctx, args) => {
     const db = ctx.db as any;
-    let projects = await db.query("prospectionProjects").order("desc").collect();
+    const prospectionProjects = await db
+      .query("prospectionProjects")
+      .order("desc")
+      .collect();
+    const opportunities = await db.query("opportunities").order("desc").collect();
+
+    let projects = [
+      ...prospectionProjects,
+      ...opportunities.map((opportunity: any) =>
+        normalizeOpportunityAsProject(opportunity)
+      ),
+    ];
 
     if (args.stage) {
       projects = projects.filter((project: any) => project.stage === args.stage);
@@ -38,6 +320,11 @@ export const listProjects = query({
         (project: any) => project.ownerAgentId === args.ownerAgentId
       );
     }
+
+    projects.sort(
+      (a: any, b: any) =>
+        (b.updatedAt ?? b._creationTime ?? 0) - (a.updatedAt ?? a._creationTime ?? 0)
+    );
 
     return projects.slice(0, args.limit ?? 100);
   },
@@ -53,13 +340,7 @@ export const createProject = mutation({
     proposedService: v.string(),
     setupFee: v.number(),
     monthlyFee: v.number(),
-    interestLevel: v.union(
-      v.literal("none"),
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("explicit")
-    ),
+    interestLevel: interestLevelValue,
     exchangeHistory: v.array(v.string()),
     needsHumanAction: v.boolean(),
     stage: stageValue,
@@ -89,22 +370,14 @@ export const createProject = mutation({
 
 export const updateProject = mutation({
   args: {
-    projectId: v.id("prospectionProjects"),
+    projectId: v.string(),
     source: v.optional(v.string()),
     industry: v.optional(v.string()),
     identifiedNeed: v.optional(v.string()),
     proposedService: v.optional(v.string()),
     setupFee: v.optional(v.number()),
     monthlyFee: v.optional(v.number()),
-    interestLevel: v.optional(
-      v.union(
-        v.literal("none"),
-        v.literal("low"),
-        v.literal("medium"),
-        v.literal("high"),
-        v.literal("explicit")
-      )
-    ),
+    interestLevel: v.optional(interestLevelValue),
     exchangeHistory: v.optional(v.array(v.string())),
     needsHumanAction: v.optional(v.boolean()),
     stage: v.optional(stageValue),
@@ -116,11 +389,23 @@ export const updateProject = mutation({
   handler: async (ctx, args) => {
     const db = ctx.db as any;
     const { projectId, updatedBy, ...patch } = args;
+    const now = Date.now();
+    const prospectionProjectId = db.normalizeId("prospectionProjects", projectId);
+    const opportunityId = db.normalizeId("opportunities", projectId);
 
-    await db.patch(projectId, {
-      ...patch,
-      updatedAt: Date.now(),
-    });
+    if (prospectionProjectId) {
+      await db.patch(prospectionProjectId, {
+        ...patch,
+        updatedAt: now,
+      });
+    } else if (opportunityId) {
+      await db.patch(opportunityId, {
+        ...patch,
+        updatedAt: now,
+      });
+    } else {
+      throw new Error(`Unknown projectId: ${projectId}`);
+    }
 
     await db.insert("activities", {
       agentId: updatedBy,
@@ -129,6 +414,34 @@ export const updateProject = mutation({
     });
 
     return projectId;
+  },
+});
+
+export const compactOpportunities = mutation({
+  args: {
+    updatedBy: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const db = ctx.db as any;
+    const opportunities = await db.query("opportunities").order("desc").collect();
+    const selected = opportunities.slice(0, args.limit ?? opportunities.length);
+    const now = Date.now();
+
+    for (const opportunity of selected) {
+      const normalized = normalizeOpportunityAsProject(opportunity);
+      await db.replace(opportunity._id, toCanonicalOpportunityDoc(normalized, now));
+    }
+
+    if (selected.length > 0) {
+      await db.insert("activities", {
+        agentId: args.updatedBy,
+        type: "project_updated",
+        summary: `${args.updatedBy} compacted ${selected.length} opportunities`,
+      });
+    }
+
+    return { compacted: selected.length };
   },
 });
 

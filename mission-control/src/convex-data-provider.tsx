@@ -146,7 +146,7 @@ export function ConvexDataProvider({
     patch: UpdateProspectionProjectInput
   ) => {
     return updateProspectionProjectMut({
-      projectId: projectId as Id<"prospectionProjects">,
+      projectId,
       ...patch,
       updatedBy: "human",
     });

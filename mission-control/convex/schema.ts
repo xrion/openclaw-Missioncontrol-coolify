@@ -129,6 +129,10 @@ export default defineSchema({
     .index("by_type", ["type"])
     .index("by_taskId", ["taskId"]),
 
+  // Flexible table: external agents can write heterogeneous opportunity payloads.
+  // Convex requires top-level document validators to be object/union/v.any().
+  opportunities: defineTable(v.any()),
+
   prospectionProjects: defineTable({
     name: v.string(),
     source: v.string(),
