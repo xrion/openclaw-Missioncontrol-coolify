@@ -10,6 +10,10 @@
  *   GET  /config          — Returns mc-config.json data
  *   GET  /agents          — Lists all agents from openclaw.json
  *   POST /agents/create   — Creates a new agent (workspace + config + SOUL.md)
+ *   GET  /files/roots     — Lists available filesystem roots
+ *   GET  /files/list      — Lists directory content (query: root, path)
+ *   GET  /files/read      — Reads file preview (query: root, path, maxBytes)
+ *   GET  /files/download  — Downloads a file (query: root, path)
  */
 
 const http = require("http");
@@ -23,6 +27,14 @@ const CONFIG_FILE =
   process.env.OPENCLAW_CONFIG_FILE || "/data/.openclaw/openclaw.json";
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || "/data/.openclaw";
 const CONVEX_URL = process.env.CONVEX_URL || "";
+
+const DEFAULT_FILE_ROOTS = [
+  { id: "data", name: "OpenClaw Data", path: "/data" },
+  { id: "workspace", name: "OpenClaw Workspace", path: "/data/openclaw-workspace" },
+  { id: "shared", name: "Mission Control Shared", path: MC_SHARED_DIR },
+];
+
+const FILE_ROOTS = DEFAULT_FILE_ROOTS.filter((root) => fs.existsSync(root.path));
 
 // --- Helpers ---
 
@@ -143,6 +155,67 @@ function toAgentId(name) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(data));
+}
+
+function getFileRoot(rootId) {
+  if (!FILE_ROOTS.length) return null;
+  if (!rootId) return FILE_ROOTS[0];
+  return FILE_ROOTS.find((root) => root.id === rootId) || null;
+}
+
+function normalizeRelativePath(inputPath) {
+  const raw = (inputPath || ".").trim();
+  return raw === "" ? "." : raw;
+}
+
+function toUnixPath(inputPath) {
+  return inputPath.split(path.sep).join("/");
+}
+
+function toRelativePath(rootPath, absolutePath) {
+  const relative = path.relative(rootPath, absolutePath);
+  if (!relative) return ".";
+  return toUnixPath(relative);
+}
+
+function resolveSafePath(rootPath, relativePath) {
+  const normalized = normalizeRelativePath(relativePath);
+  const absolutePath = path.resolve(rootPath, normalized);
+  const safePrefix = rootPath.endsWith(path.sep) ? rootPath : `${rootPath}${path.sep}`;
+  if (absolutePath !== rootPath && !absolutePath.startsWith(safePrefix)) {
+    throw new Error("Path escapes allowed root");
+  }
+  return absolutePath;
+}
+
+function isProbablyBinary(buffer) {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 8192));
+  if (!sample.length) return false;
+  let suspicious = 0;
+  for (const byte of sample) {
+    if (byte === 0) return true;
+    if (byte < 7 || (byte > 14 && byte < 32)) suspicious++;
+  }
+  return suspicious / sample.length > 0.12;
+}
+
+function readFileChunk(filePath, maxBytes) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // --- Route Handlers ---
@@ -303,6 +376,159 @@ function handleCreateAgent(req, res) {
   });
 }
 
+function handleFilesRoots(_req, res) {
+  const roots = FILE_ROOTS.map((root) => ({
+    id: root.id,
+    name: root.name,
+    path: root.path,
+    readOnly: true,
+  }));
+  sendJson(res, 200, { roots });
+}
+
+function handleFilesList(req, res, url) {
+  try {
+    const root = getFileRoot(url.searchParams.get("root"));
+    if (!root) {
+      return sendJson(res, 404, { error: "No file roots available" });
+    }
+
+    const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    const absolutePath = resolveSafePath(root.path, requestedPath);
+    const stat = fs.statSync(absolutePath);
+
+    if (!stat.isDirectory()) {
+      return sendJson(res, 400, { error: "Target path is not a directory" });
+    }
+
+    const entries = fs
+      .readdirSync(absolutePath, { withFileTypes: true })
+      .map((entry) => {
+        const entryPath = path.join(absolutePath, entry.name);
+        let entryStat = null;
+        try {
+          entryStat = fs.statSync(entryPath);
+        } catch (_e) {
+          // Ignore broken symlinks or permission-denied entries.
+        }
+        const kind = entry.isDirectory()
+          ? "directory"
+          : entry.isFile()
+          ? "file"
+          : "other";
+        return {
+          name: entry.name,
+          kind,
+          path: toRelativePath(root.path, entryPath),
+          size: entryStat?.size ?? 0,
+          modifiedAt: entryStat?.mtimeMs ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.kind !== b.kind) {
+          if (a.kind === "directory") return -1;
+          if (b.kind === "directory") return 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+    const currentPath = toRelativePath(root.path, absolutePath);
+    const parentPath =
+      currentPath === "."
+        ? null
+        : toRelativePath(root.path, path.resolve(absolutePath, ".."));
+
+    sendJson(res, 200, {
+      root: { id: root.id, name: root.name },
+      currentPath,
+      parentPath,
+      entries,
+    });
+  } catch (e) {
+    sendJson(res, 400, { error: e.message || "Failed to list directory" });
+  }
+}
+
+function handleFilesRead(req, res, url) {
+  try {
+    const root = getFileRoot(url.searchParams.get("root"));
+    if (!root) {
+      return sendJson(res, 404, { error: "No file roots available" });
+    }
+
+    const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    const absolutePath = resolveSafePath(root.path, requestedPath);
+    const stat = fs.statSync(absolutePath);
+
+    if (!stat.isFile()) {
+      return sendJson(res, 400, { error: "Target path is not a file" });
+    }
+
+    const requestedMaxBytes = Number.parseInt(
+      url.searchParams.get("maxBytes") || "262144",
+      10
+    );
+    const maxBytes = Number.isFinite(requestedMaxBytes)
+      ? Math.min(Math.max(requestedMaxBytes, 1024), 2 * 1024 * 1024)
+      : 262144;
+
+    const chunk = readFileChunk(absolutePath, Math.min(maxBytes, stat.size || maxBytes));
+    const binary = isProbablyBinary(chunk);
+
+    if (binary) {
+      return sendJson(res, 200, {
+        root: { id: root.id, name: root.name },
+        path: toRelativePath(root.path, absolutePath),
+        size: stat.size,
+        modifiedAt: stat.mtimeMs,
+        binary: true,
+        truncated: stat.size > chunk.length,
+      });
+    }
+
+    return sendJson(res, 200, {
+      root: { id: root.id, name: root.name },
+      path: toRelativePath(root.path, absolutePath),
+      size: stat.size,
+      modifiedAt: stat.mtimeMs,
+      binary: false,
+      truncated: stat.size > chunk.length,
+      content: chunk.toString("utf-8"),
+    });
+  } catch (e) {
+    sendJson(res, 400, { error: e.message || "Failed to read file" });
+  }
+}
+
+function handleFilesDownload(req, res, url) {
+  try {
+    const root = getFileRoot(url.searchParams.get("root"));
+    if (!root) {
+      return sendJson(res, 404, { error: "No file roots available" });
+    }
+
+    const requestedPath = normalizeRelativePath(url.searchParams.get("path") || ".");
+    const absolutePath = resolveSafePath(root.path, requestedPath);
+    const stat = fs.statSync(absolutePath);
+
+    if (!stat.isFile()) {
+      return sendJson(res, 400, { error: "Target path is not a file" });
+    }
+
+    const filename = path.basename(absolutePath);
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "application/octet-stream",
+      "Content-Length": stat.size,
+      "Content-Disposition": `attachment; filename=\"${filename}\"`,
+    });
+
+    fs.createReadStream(absolutePath).pipe(res);
+  } catch (e) {
+    sendJson(res, 400, { error: e.message || "Failed to download file" });
+  }
+}
+
 // --- Server ---
 
 const server = http.createServer((req, res) => {
@@ -329,6 +555,22 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && url.pathname === "/agents/create") {
     return handleCreateAgent(req, res);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/roots") {
+    return handleFilesRoots(req, res);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/list") {
+    return handleFilesList(req, res, url);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/read") {
+    return handleFilesRead(req, res, url);
+  }
+
+  if (req.method === "GET" && url.pathname === "/files/download") {
+    return handleFilesDownload(req, res, url);
   }
 
   res.writeHead(404, { "Content-Type": "application/json" });

@@ -5,8 +5,12 @@ import LeftSidebar from "./components/layout/LeftSidebar";
 import RightSidebar from "./components/layout/RightSidebar";
 import KanbanBoard from "./components/kanban/KanbanBoard";
 import ProjectManagementView from "./components/prospection/ProjectManagementView";
+import ServerFilesView from "./components/files/ServerFilesView";
 
-export type DashboardView = "operations" | "project_management";
+export type DashboardView =
+  | "operations"
+  | "project_management"
+  | "files";
 
 export default function App() {
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
@@ -24,8 +28,10 @@ export default function App() {
       center={
         activeView === "operations" ? (
           <KanbanBoard agentFilter={agentFilter} />
-        ) : (
+        ) : activeView === "project_management" ? (
           <ProjectManagementView agentFilter={agentFilter} />
+        ) : (
+          <ServerFilesView />
         )
       }
       rightSidebar={

@@ -3,8 +3,8 @@ import { useTasks } from "../../hooks/useTasks";
 import { useConfig } from "../../hooks/useConfig";
 
 interface TopBarProps {
-  activeView: "operations" | "project_management";
-  onViewChange: (view: "operations" | "project_management") => void;
+  activeView: "operations" | "project_management" | "files";
+  onViewChange: (view: "operations" | "project_management" | "files") => void;
 }
 
 export default function TopBar({ activeView, onViewChange }: TopBarProps) {
@@ -45,6 +45,16 @@ export default function TopBar({ activeView, onViewChange }: TopBarProps) {
             }`}
           >
             Project Mgmt
+          </button>
+          <button
+            onClick={() => onViewChange("files")}
+            className={`px-2.5 py-1 text-xs rounded ${
+              activeView === "files"
+                ? "bg-white shadow-sm text-gray-900"
+                : "text-gray-500"
+            }`}
+          >
+            Files
           </button>
         </div>
         {config && (
