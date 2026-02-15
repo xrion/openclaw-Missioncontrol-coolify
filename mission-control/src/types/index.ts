@@ -27,6 +27,11 @@ export type ActivityType =
   | "agent_online"
   | "agent_offline"
   | "heartbeat"
+  | "project_created"
+  | "project_updated"
+  | "interest_detected"
+  | "human_handoff_requested"
+  | "strategy_updated"
   | "system";
 
 export type FeedFilter = "all" | "tasks" | "comments" | "decisions";

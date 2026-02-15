@@ -8,6 +8,19 @@ import type {
   AgentStatus,
   ActivityType,
 } from "./types";
+import type {
+  NewProspectionProjectInput,
+  ProspectionProject,
+  ProspectionSettings,
+  ToolRequirement,
+  UpdateProspectionProjectInput,
+  ToolStatus,
+} from "./types/prospection";
+import {
+  DEMO_PROSPECTION_PROJECTS,
+  DEMO_TOOL_REQUIREMENTS,
+  DEFAULT_PROSPECTION_SETTINGS,
+} from "./data/prospection";
 
 // --- Demo ID generator ---
 let _idCounter = 100;
@@ -166,15 +179,35 @@ export interface MCData {
   tasksByStatus: Record<TaskStatus, Task[]>;
   counts: { queue: number; total: number };
   activities: Activity[];
+  prospectionProjects: ProspectionProject[];
+  prospectionTools: ToolRequirement[];
+  prospectionSettings: ProspectionSettings;
   createTask: (args: {
     title: string;
     description: string;
     priority: TaskPriority;
     createdBy: string;
     tags?: string[];
-  }) => void;
-  moveTask: (taskId: any, status: TaskStatus) => void;
-  assignTask: (taskId: any, agentId: string) => void;
+  }) => unknown | Promise<unknown>;
+  moveTask: (taskId: any, status: TaskStatus) => unknown | Promise<unknown>;
+  assignTask: (taskId: any, agentId: string) => unknown | Promise<unknown>;
+  createProspectionProject: (
+    args: NewProspectionProjectInput
+  ) => unknown | Promise<unknown>;
+  updateProspectionProject: (
+    projectId: string,
+    patch: UpdateProspectionProjectInput
+  ) => unknown | Promise<unknown>;
+  upsertProspectionTool: (args: {
+    key: string;
+    label: string;
+    status: ToolStatus;
+    updatedBy: string;
+  }) => unknown | Promise<unknown>;
+  updateProspectionSettings: (args: {
+    settings: ProspectionSettings;
+    updatedBy: string;
+  }) => unknown | Promise<unknown>;
   isDemoMode: boolean;
 }
 
@@ -195,6 +228,9 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     agents: DEMO_AGENTS,
     tasks: DEMO_TASKS,
     activities: DEMO_ACTIVITIES,
+    prospectionProjects: DEMO_PROSPECTION_PROJECTS,
+    prospectionTools: DEMO_TOOL_REQUIREMENTS,
+    prospectionSettings: DEFAULT_PROSPECTION_SETTINGS,
   });
 
   const tasksByStatus = state.tasks.reduce(
@@ -274,14 +310,99 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const createProspectionProject = useCallback((args: NewProspectionProjectInput) => {
+    const newProject: ProspectionProject = {
+      id: demoId("prospectionProjects"),
+      company: args.company,
+      source: args.source,
+      industry: args.industry,
+      region: args.region,
+      identifiedNeed: args.identifiedNeed,
+      proposedService: args.proposedService,
+      setupFee: args.setupFee,
+      monthlyFee: args.monthlyFee,
+      interestLevel: "none",
+      exchangeHistory: [],
+      needsHumanAction: false,
+      stage: "exploration",
+      ownerAgentId: args.ownerAgentId,
+      tokenConsumption: 0,
+      scoreValidation: "pending",
+      draftMessage: "",
+    };
+
+    setState((prev) => ({
+      ...prev,
+      prospectionProjects: [newProject, ...prev.prospectionProjects],
+    }));
+  }, []);
+
+  const updateProspectionProject = useCallback(
+    (projectId: string, patch: UpdateProspectionProjectInput) => {
+      setState((prev) => ({
+        ...prev,
+        prospectionProjects: prev.prospectionProjects.map((project) =>
+          project.id === projectId ? { ...project, ...patch } : project
+        ),
+      }));
+    },
+    []
+  );
+
+  const upsertProspectionTool = useCallback(
+    (args: { key: string; label: string; status: ToolStatus; updatedBy: string }) => {
+      void args.updatedBy;
+      setState((prev) => {
+        const existing = prev.prospectionTools.find((tool) => tool.key === args.key);
+        if (existing) {
+          return {
+            ...prev,
+            prospectionTools: prev.prospectionTools.map((tool) =>
+              tool.key === args.key
+                ? { ...tool, label: args.label, status: args.status }
+                : tool
+            ),
+          };
+        }
+
+        return {
+          ...prev,
+          prospectionTools: [
+            ...prev.prospectionTools,
+            { key: args.key, label: args.label, status: args.status },
+          ],
+        };
+      });
+    },
+    []
+  );
+
+  const updateProspectionSettings = useCallback(
+    (args: { settings: ProspectionSettings; updatedBy: string }) => {
+      void args.updatedBy;
+      setState((prev) => ({
+        ...prev,
+        prospectionSettings: args.settings,
+      }));
+    },
+    []
+  );
+
   const value: MCData = {
     agents: state.agents,
     tasksByStatus,
     counts: { queue: queueCount, total: state.tasks.length },
     activities: state.activities,
+    prospectionProjects: state.prospectionProjects,
+    prospectionTools: state.prospectionTools,
+    prospectionSettings: state.prospectionSettings,
     createTask,
     moveTask,
     assignTask,
+    createProspectionProject,
+    updateProspectionProject,
+    upsertProspectionTool,
+    updateProspectionSettings,
     isDemoMode: true,
   };
 

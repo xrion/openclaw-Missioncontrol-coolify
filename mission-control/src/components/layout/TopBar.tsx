@@ -2,7 +2,12 @@ import { useAgents } from "../../hooks/useAgents";
 import { useTasks } from "../../hooks/useTasks";
 import { useConfig } from "../../hooks/useConfig";
 
-export default function TopBar() {
+interface TopBarProps {
+  activeView: "operations" | "project_management";
+  onViewChange: (view: "operations" | "project_management") => void;
+}
+
+export default function TopBar({ activeView, onViewChange }: TopBarProps) {
   const { activeCount } = useAgents();
   const { counts } = useTasks();
   const { config, gatewayLink } = useConfig();
@@ -20,6 +25,28 @@ export default function TopBar() {
         <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
           Mission Control
         </h1>
+        <div className="flex items-center bg-surface-100 rounded-md p-1">
+          <button
+            onClick={() => onViewChange("operations")}
+            className={`px-2.5 py-1 text-xs rounded ${
+              activeView === "operations"
+                ? "bg-white shadow-sm text-gray-900"
+                : "text-gray-500"
+            }`}
+          >
+            Operations
+          </button>
+          <button
+            onClick={() => onViewChange("project_management")}
+            className={`px-2.5 py-1 text-xs rounded ${
+              activeView === "project_management"
+                ? "bg-white shadow-sm text-gray-900"
+                : "text-gray-500"
+            }`}
+          >
+            Project Mgmt
+          </button>
+        </div>
         {config && (
           <span className="text-xs text-gray-400 font-mono">
             {config.model}

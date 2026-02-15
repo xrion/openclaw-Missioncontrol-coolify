@@ -78,6 +78,11 @@ export default defineSchema({
       v.literal("agent_online"),
       v.literal("agent_offline"),
       v.literal("heartbeat"),
+      v.literal("project_created"),
+      v.literal("project_updated"),
+      v.literal("interest_detected"),
+      v.literal("human_handoff_requested"),
+      v.literal("strategy_updated"),
       v.literal("system")
     ),
     taskId: v.optional(v.id("tasks")),
@@ -123,4 +128,75 @@ export default defineSchema({
   })
     .index("by_type", ["type"])
     .index("by_taskId", ["taskId"]),
+
+  prospectionProjects: defineTable({
+    name: v.string(),
+    source: v.string(),
+    industry: v.string(),
+    region: v.union(v.literal("Europe"), v.literal("United States")),
+    identifiedNeed: v.string(),
+    proposedService: v.string(),
+    setupFee: v.number(),
+    monthlyFee: v.number(),
+    interestLevel: v.union(
+      v.literal("none"),
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("explicit")
+    ),
+    exchangeHistory: v.array(v.string()),
+    needsHumanAction: v.boolean(),
+    stage: v.union(
+      v.literal("exploration"),
+      v.literal("qualification"),
+      v.literal("first_contact"),
+      v.literal("follow_up"),
+      v.literal("interest_detected"),
+      v.literal("crm_logged"),
+      v.literal("human_handoff"),
+      v.literal("performance_review"),
+      v.literal("strategy_adjustment")
+    ),
+    ownerAgentId: v.string(),
+    tokenConsumption: v.number(),
+    scoreValidation: v.union(
+      v.literal("pending"),
+      v.literal("x1"),
+      v.literal("x2"),
+      v.literal("x8")
+    ),
+    draftMessage: v.string(),
+    createdBy: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_stage", ["stage"])
+    .index("by_industry", ["industry"])
+    .index("by_ownerAgentId", ["ownerAgentId"])
+    .index("by_needsHumanAction", ["needsHumanAction"]),
+
+  prospectionSettings: defineTable({
+    mode: v.union(v.literal("batch"), v.literal("continuous")),
+    dailyLimitEmails: v.number(),
+    dailyLimitResearches: v.number(),
+    dailyLimitFollowUps: v.number(),
+    initialStrategy: v.string(),
+    adaptationWindow: v.number(),
+    launchValidated: v.boolean(),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+  }).index("by_updatedAt", ["updatedAt"]),
+
+  prospectionTools: defineTable({
+    key: v.string(),
+    label: v.string(),
+    status: v.union(
+      v.literal("available"),
+      v.literal("restricted"),
+      v.literal("missing"),
+      v.literal("unknown")
+    ),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });
